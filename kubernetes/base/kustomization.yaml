@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: solidarytech
+
+resources:
+  - namespace.yaml
+  # secrets.yaml is NOT committed - create from secrets.yaml.example before applying
+  # kubectl create secret generic solidarytech-secrets --from-env-file=.env -n solidarytech
+  - ingress.yaml
+  - ngo-service/deployment.yaml
+  - ngo-service/service.yaml
+  - ngo-service/configmap.yaml
+  - ngo-service/hpa.yaml
+  - donation-service/deployment.yaml
+  - donation-service/worker-deployment.yaml
+  - donation-service/service.yaml
+  - donation-service/configmap.yaml
+  - donation-service/hpa.yaml
+  - donation-service/worker-hpa.yaml
+  - volunteer-service/deployment.yaml
+  - volunteer-service/service.yaml
+  - volunteer-service/configmap.yaml
+  - volunteer-service/hpa.yaml
+  - ngo-service/pdb.yaml
+  - donation-service/pdb.yaml
+  - volunteer-service/pdb.yaml
+  - network-policies.yaml
+
+patches:
+  - path: security-context.yaml
+
+labels:
+  - pairs:
+      project: SolidaryTech
+      managed-by: argocd
+    includeSelectors: false

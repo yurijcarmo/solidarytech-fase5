@@ -1,0 +1,141 @@
+name: Security Scan (DevSecOps)
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Toda segunda-feira as 06:00 UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  trivy-filesystem:
+    name: Trivy - Scan do Repositorio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Trivy - Scan de vulnerabilidades no codigo
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Trivy - Gerar relatorio SARIF
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+
+      - name: Upload resultado SARIF
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-filesystem-sarif
+          path: trivy-fs-results.sarif
+
+  trivy-iac:
+    name: Trivy - Scan IaC (Terraform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Trivy - Scan de configuracao Terraform
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Trivy - Relatorio IaC SARIF
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          format: 'sarif'
+          output: 'trivy-iac-results.sarif'
+
+      - name: Upload resultado IaC
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-iac-sarif
+          path: trivy-iac-results.sarif
+
+  checkov:
+    name: Checkov - Scan IaC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Instalar Checkov
+        run: pip install checkov
+
+      - name: Executar Checkov no Terraform
+        run: |
+          checkov -d terraform/ \
+            --framework terraform \
+            --output cli \
+            --soft-fail \
+            --compact \
+            2>&1 | tee checkov-results.txt
+
+      - name: Upload resultado Checkov
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: checkov-results
+          path: checkov-results.txt
+
+  kubernetes-scan:
+    name: Trivy - Scan Manifests Kubernetes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Trivy - Scan de manifests K8s
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'kubernetes/'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload resultado K8s scan
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-k8s-results
+          path: trivy-k8s-results.sarif
+
+  summary:
+    name: Resumo de Seguranca
+    runs-on: ubuntu-latest
+    needs: [trivy-filesystem, trivy-iac, checkov, kubernetes-scan]
+    if: always()
+    steps:
+      - name: Resumo dos scans
+        run: |
+          echo "## Resumo de Seguranca - DevSecOps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scan | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy Filesystem | ${{ needs.trivy-filesystem.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy IaC | ${{ needs.trivy-iac.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Checkov | ${{ needs.checkov.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| K8s Manifests | ${{ needs.kubernetes-scan.result }} |" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,148 @@
+version: '3.8'
+
+# AMBIENTE LOCAL APENAS - credenciais abaixo sao para desenvolvimento local
+# Em producao, os secrets sao gerenciados via Kubernetes Secrets e AWS Secrets Manager
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: solidarytech
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev123}
+      POSTGRES_DB: solidarytech
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solidarytech"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:latest
+    environment:
+      SERVICES: sqs,dynamodb
+      DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ngo-service:
+    build: ./microservices/ngo-service
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://solidarytech:${POSTGRES_PASSWORD:-localdev123}@postgres:5432/solidarytech
+      SERVICE_NAME: ngo-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      REDIS_URL: redis://redis:6379/0
+      FLASK_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  donation-service:
+    build: ./microservices/donation-service
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: postgresql://solidarytech:${POSTGRES_PASSWORD:-localdev123}@postgres:5432/solidarytech
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/solidarytech-donations
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      DYNAMODB_ENDPOINT: http://localstack:4566
+      DYNAMODB_TABLE_NAME: solidarytech-transactions
+      REDIS_URL: redis://redis:6379/0
+      SERVICE_NAME: donation-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      FLASK_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  donation-worker:
+    build: ./microservices/donation-service
+    command: python src/worker.py
+    environment:
+      DATABASE_URL: postgresql://solidarytech:${POSTGRES_PASSWORD:-localdev123}@postgres:5432/solidarytech
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/solidarytech-donations
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      DYNAMODB_ENDPOINT: http://localstack:4566
+      DYNAMODB_TABLE_NAME: solidarytech-transactions
+      SERVICE_NAME: donation-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  volunteer-service:
+    build: ./microservices/volunteer-service
+    ports:
+      - "8082:8082"
+    environment:
+      DATABASE_URL: postgresql://solidarytech:${POSTGRES_PASSWORD:-localdev123}@postgres:5432/solidarytech
+      SERVICE_NAME: volunteer-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      FLASK_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./kubernetes/monitoring/prometheus/prometheus-local.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./kubernetes/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./kubernetes/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./kubernetes/monitoring/otel-collector-local.yaml:/etc/otelcol-contrib/config.yaml
+
+volumes:
+  postgres_data:

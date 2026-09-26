@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: solidarytech
+  labels:
+    team: solidarytech
+    project: SolidaryTech
+    environment: production
+    cost-center: ngo-core

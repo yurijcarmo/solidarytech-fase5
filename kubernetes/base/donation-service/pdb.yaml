@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: donation-service-pdb
+  namespace: solidarytech
+  labels:
+    app: donation-service
+    team: solidarytech
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: donation-service
+      component: api

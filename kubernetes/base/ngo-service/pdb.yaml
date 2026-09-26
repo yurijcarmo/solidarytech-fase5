@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ngo-service-pdb
+  namespace: solidarytech
+  labels:
+    app: ngo-service
+    team: solidarytech
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ngo-service

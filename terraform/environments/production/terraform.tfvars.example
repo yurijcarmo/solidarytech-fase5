@@ -1,0 +1,10 @@
+aws_region   = "us-east-1"
+project_name = "solidarytech"
+db_username  = "solidarytech_admin"
+db_password  = "CHANGE_ME_BEFORE_APPLY"
+
+# AWS Academy Learner Lab IAM Roles
+# Execute: aws iam list-roles --query 'Roles[*].RoleName' --output text
+# Procure os nomes que contenham "LabEksClusterRole" e "LabEksNodeRole"
+eks_cluster_role_name = "CHANGE_ME_LabEksClusterRole_NAME"
+eks_node_role_name    = "CHANGE_ME_LabEksNodeRole_NAME"

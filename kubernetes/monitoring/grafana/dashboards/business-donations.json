@@ -1,0 +1,253 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Metricas de Negocio - Doacoes, Moedas e Operacoes (SolidaryTech)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Regiao Ativa",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 20, "y": 0 },
+      "datasource": "Prometheus",
+      "description": "us-east-1 = Producao | us-west-2 = DR",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "text" },
+          "mappings": [
+            { "type": "value", "options": { "us-east-1": { "text": "PROD", "color": "green" } } },
+            { "type": "value", "options": { "us-west-2": { "text": "DR", "color": "orange" } } }
+          ]
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "expr": "topk(1, count by (topology_kubernetes_io_region) (up{namespace=\"solidarytech\"} == 1))", "legendFormat": "{{ topology_kubernetes_io_region }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Doacoes Processadas (Total)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 0 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "orientation": "auto" },
+      "targets": [
+        { "expr": "donation_processed_total", "legendFormat": "Total", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Total Arrecadado (R$)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 0 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "dark-green", "value": 10000 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "orientation": "auto" },
+      "targets": [
+        { "expr": "donation_amount_brl_total", "legendFormat": "R$", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Taxa de Sucesso (%)",
+      "type": "gauge",
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 0 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 90 }, { "color": "green", "value": 98 } ] }
+        }
+      },
+      "targets": [
+        {
+          "expr": "(\n  sum(donation_processed_total)\n  /\n  (sum(donation_processed_total) + (sum(donation_errors_total{error_type!=\"sqs_publish\"}) or vector(0)) + 1)\n) * 100",
+          "legendFormat": "Success Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Erros por Tipo",
+      "type": "piechart",
+      "gridPos": { "h": 5, "w": 4, "x": 15, "y": 0 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right" }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "donation_errors_total", "legendFormat": "{{ error_type }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Doacoes por Moeda",
+      "type": "piechart",
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 0 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right" }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "donation_by_currency_total", "legendFormat": "{{ currency }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Arrecadacao ao Longo do Tempo (R$)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "dark-green", "mode": "fixed" },
+          "custom": { "drawStyle": "line", "fillOpacity": 30, "lineWidth": 2, "showPoints": "never" },
+          "unit": "currencyBRL"
+        }
+      },
+      "targets": [
+        { "expr": "donation_amount_brl_total", "legendFormat": "Total Acumulado (R$)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Volume de Doacoes ao Longo do Tempo",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "green", "mode": "fixed" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1, "showPoints": "never" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(donation_processed_total[5m])", "legendFormat": "Doacoes (5min)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Doacoes por Moeda ao Longo do Tempo",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 30, "lineWidth": 2, "showPoints": "never", "stacking": { "mode": "normal" } },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(donation_by_currency_total[5m])", "legendFormat": "{{ currency }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Latencia de Processamento de Doacao",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never", "thresholdsStyle": { "mode": "line+area" } },
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 0.5 } ] }
+        }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(donation_slo_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(donation_slo_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(donation_slo_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+      ]
+    },
+    {
+      "title": "Erros ao Longo do Tempo (por tipo)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 21 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 50, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(donation_errors_total[5m])", "legendFormat": "{{ error_type }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Operacoes NGO Service",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 21 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" },
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        { "expr": "rate(ngo_operations_total[5m])", "legendFormat": "{{ operation }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Operacoes Volunteer Service",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 21 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" },
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        { "expr": "rate(volunteer_operations_total[5m])", "legendFormat": "{{ operation }}", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["solidarytech", "business", "donations"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Business Metrics - Doacoes e Operacoes",
+  "uid": "solidarytech-business-metrics",
+  "version": 1
+}

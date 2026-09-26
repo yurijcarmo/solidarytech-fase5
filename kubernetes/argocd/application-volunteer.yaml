@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: volunteer-service
+  namespace: argocd
+  labels:
+    team: solidarytech
+    cost-center: ngo-core
+spec:
+  project: solidarytech
+  source:
+    repoURL: git@github.com:rgstn/hackathon-solidarytech.git
+    targetRevision: main
+    path: kubernetes/base/volunteer-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: solidarytech
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

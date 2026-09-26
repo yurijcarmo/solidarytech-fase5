@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: selfhealing-handler-script
+  namespace: monitoring
+data:
+  handler.py: |
+    import json
+    import logging
+    import os
+    import subprocess
+    from datetime import datetime, timezone
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logger = logging.getLogger("selfhealing")
+
+    NAMESPACE = "solidarytech"
+
+    def kubectl(*args):
+        cmd = ["kubectl", "-n", NAMESPACE] + list(args)
+        logger.info("Executing: %s", " ".join(cmd))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            logger.error("kubectl failed: %s", result.stderr)
+        return result.returncode == 0, result.stdout
+
+    def handle_crash_loop(pod_name):
+        deployment = "-".join(pod_name.rsplit("-", 2)[:-2])
+        if not deployment:
+            deployment = pod_name
+        logger.info("[SELFHEAL] CrashLoopBackOff: %s -> rollout restart %s", pod_name, deployment)
+        ok, _ = kubectl("rollout", "restart", f"deployment/{deployment}")
+        return "success" if ok else "failed"
+
+    def handle_high_memory(pod_name):
+        deployment = "-".join(pod_name.rsplit("-", 2)[:-2])
+        if not deployment:
+            deployment = pod_name
+        ok, out = kubectl("get", "deployment", deployment, "-o", "jsonpath={.spec.replicas}")
+        if not ok:
+            return "failed"
+        current = int(out.strip())
+        if current >= 6:
+            logger.info("[SELFHEAL] %s already at max replicas (6)", deployment)
+            return "skipped: max_replicas"
+        new = current + 1
+        logger.info("[SELFHEAL] HighMemory: scaling %s %d -> %d", deployment, current, new)
+        ok, _ = kubectl("scale", f"deployment/{deployment}", f"--replicas={new}")
+        return f"scaled: {current}->{new}" if ok else "failed"
+
+    def handle_high_cpu(pod_name):
+        logger.info("[SELFHEAL] HighCPU: %s - delegating to HPA", pod_name)
+        kubectl("get", "hpa")
+        return "delegated_to_hpa"
+
+    def handle_queue_backlog():
+        ok, out = kubectl("get", "deployment", "donation-worker", "-o", "jsonpath={.spec.replicas}")
+        if not ok:
+            return "no_worker_deployment"
+        current = int(out.strip()) if out.strip() else 1
+        if current >= 4:
+            return "skipped: max_replicas"
+        new = current + 1
+        logger.info("[SELFHEAL] QueueBacklog: scaling donation-worker %d -> %d", current, new)
+        ok, _ = kubectl("scale", "deployment/donation-worker", f"--replicas={new}")
+        return f"scaled: {current}->{new}" if ok else "failed"
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length > 0 else b""
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+
+            if not body:
+                return
+
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON payload")
+                return
+
+            for alert in data.get("alerts", []):
+                status = alert.get("status", "unknown")
+                labels = alert.get("labels", {})
+                alert_name = labels.get("alertname", "unknown")
+                pod_name = labels.get("pod", "unknown")
+
+                logger.info("[ALERT] %s | pod=%s | status=%s", alert_name, pod_name, status)
+
+                if status == "resolved":
+                    logger.info("[SELFHEAL] Alert resolved: %s", alert_name)
+                    continue
+
+                result = "no_action"
+                if alert_name == "PodCrashLooping":
+                    result = handle_crash_loop(pod_name)
+                elif alert_name == "HighMemoryUsage":
+                    result = handle_high_memory(pod_name)
+                elif alert_name == "HighCPUUsage":
+                    result = handle_high_cpu(pod_name)
+                elif alert_name == "DonationQueueBacklog":
+                    result = handle_queue_backlog()
+                elif alert_name in ("HighErrorRate", "HighLatency",
+                                     "DonationServiceHighErrorRate", "DonationServiceHighLatency"):
+                    logger.info("[SELFHEAL] %s detected - triggering RCA", alert_name)
+                    result = "rca_triggered"
+                else:
+                    logger.info("[SELFHEAL] Unmapped alert: %s", alert_name)
+
+                logger.info("[SELFHEAL] Action result: %s -> %s", alert_name, result)
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"healthy","service":"selfhealing-handler"}')
+
+        def log_message(self, format, *args):
+            pass
+
+    if __name__ == "__main__":
+        port = int(os.getenv("PORT", "9095"))
+        server = HTTPServer(("0.0.0.0", port), WebhookHandler)
+        logger.info("Self-healing webhook server started on port %d", port)
+        server.serve_forever()
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: selfhealing-handler
+  namespace: monitoring
+  labels:
+    app: selfhealing-handler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: selfhealing-handler
+  labels:
+    app: selfhealing-handler
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "replicasets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: selfhealing-handler
+  labels:
+    app: selfhealing-handler
+subjects:
+  - kind: ServiceAccount
+    name: selfhealing-handler
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: selfhealing-handler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selfhealing-handler
+  namespace: monitoring
+  labels:
+    app: selfhealing-handler
+    team: solidarytech
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selfhealing-handler
+  template:
+    metadata:
+      labels:
+        app: selfhealing-handler
+        team: solidarytech
+    spec:
+      serviceAccountName: selfhealing-handler
+      initContainers:
+        - name: install-kubectl
+          image: bitnami/kubectl:latest
+          command: ["cp", "/opt/bitnami/kubectl/bin/kubectl", "/shared/kubectl"]
+          volumeMounts:
+            - name: shared-bin
+              mountPath: /shared
+      containers:
+        - name: handler
+          image: python:3.13-slim
+          command: ["python3", "/opt/handler/handler.py"]
+          env:
+            - name: PATH
+              value: "/shared:/usr/local/bin:/usr/bin:/bin"
+          ports:
+            - containerPort: 9095
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9095
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9095
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: handler-script
+              mountPath: /opt/handler
+            - name: shared-bin
+              mountPath: /shared
+      volumes:
+        - name: handler-script
+          configMap:
+            name: selfhealing-handler-script
+        - name: shared-bin
+          emptyDir: {}

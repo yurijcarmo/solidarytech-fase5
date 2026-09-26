@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ngo-service-config
+  namespace: solidarytech
+  labels:
+    app: ngo-service
+    team: solidarytech
+    cost-center: ngo-core
+data:
+  SERVICE_NAME: "ngo-service"
+  SERVICE_PORT: "8080"
+  LOG_LEVEL: "INFO"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring:4317"
+  OTEL_SERVICE_NAME: "ngo-service"
+  ENVIRONMENT: "production"
+  REDIS_URL: "redis://solidarytech-redis.ur9imp.0001.use1.cache.amazonaws.com:6379/0"

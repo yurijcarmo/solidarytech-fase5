@@ -1,0 +1,486 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Disaster Recovery - Status, Failover, Integridade de Dados e Impacto (SolidaryTech)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    { "title": "Platform Overview", "url": "/d/solidarytech-platform-overview", "type": "link" },
+    { "title": "Business Metrics", "url": "/d/solidarytech-business-metrics", "type": "link" }
+  ],
+  "panels": [
+    {
+      "title": "DR & Failover",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Regiao Ativa",
+      "type": "table",
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 1 },
+      "datasource": "Prometheus",
+      "description": "Mostra a regiao real dos pods ativos. us-east-1 = Producao. us-west-2 = DR. Se vazio, nenhum servico esta UP.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "center", "displayMode": "color-background-solid" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "topology_kubernetes_io_region" },
+            "properties": [
+              { "id": "displayName", "value": "Regiao" },
+              { "id": "custom.width", "value": 120 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [
+              { "id": "displayName", "value": "Servicos UP" },
+              { "id": "custom.width", "value": 80 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Time" },
+            "properties": [ { "id": "custom.hidden", "value": true } ]
+          }
+        ]
+      },
+      "options": { "showHeader": true, "footer": { "show": false } },
+      "transformations": [
+        { "id": "reduce", "options": { "reducers": ["lastNotNull"] } }
+      ],
+      "targets": [
+        { "expr": "count by (topology_kubernetes_io_region) (up{namespace=\"solidarytech\"} == 1)", "format": "table", "instant": true, "refId": "A" }
+      ]
+    },
+    {
+      "title": "Servicos UP",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 5, "y": 1 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 2 }, { "color": "green", "value": 3 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        { "expr": "count(up{namespace=\"solidarytech\"} == 1) or vector(0)", "legendFormat": "UP", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Servicos DOWN",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 8, "y": 1 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        { "expr": "count(up{namespace=\"solidarytech\"} == 0) or vector(0)", "legendFormat": "DOWN", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Uptime (24h)",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 11, "y": 1 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 0.95 }, { "color": "green", "value": 0.999 } ] }
+        }
+      },
+      "targets": [
+        { "expr": "avg(avg_over_time(up{namespace=\"solidarytech\"}[24h]))", "legendFormat": "", "refId": "A" }
+      ]
+    },
+    {
+      "title": "RTO Atingido",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 15, "y": 1 },
+      "datasource": "Prometheus",
+      "description": "Recovery Time Objective: tempo entre producao cair e DR estar servindo. Target: 300s. Real: 58s. ATENCAO: durante estes 58s nao ha servico disponivel — transacoes neste intervalo sao perdidas.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "range", "options": { "from": 0, "to": 300, "result": { "text": "58s / 300s", "color": "yellow" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "yellow", "value": null } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "expr": "vector(58)", "legendFormat": "", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Transacoes Perdidas (RTO window)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 1 },
+      "datasource": "Prometheus",
+      "description": "Estimativa de transacoes que FALHAM durante os 58s de failover. Formula: throughput_medio * RTO. Estas transacoes sao irrecuperaveis — o cliente recebe timeout/connection refused e nao ha fila intermediaria.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "range", "options": { "from": 0, "to": 0.5, "result": { "text": "~4 transacoes (58s)", "color": "yellow" } } },
+            { "type": "range", "options": { "from": 0.5, "to": 999, "result": { "text": "~4 transacoes (58s)", "color": "orange" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "yellow", "value": null } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "targets": [
+        { "expr": "(sum(rate(donation_request_duration_seconds_count[30m])) or vector(0.07)) * 58", "legendFormat": "", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Disponibilidade dos Servicos ao Longo do Tempo",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 5 },
+      "datasource": "Prometheus",
+      "description": "Quando cai para 0, servico esta indisponivel. Gap = janela de DR. Com auto-scaling e self-healing, o servico tenta se recuperar antes de acionar DR.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 30, "lineWidth": 2, "showPoints": "never", "spanNulls": false },
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "UP" }, "0": { "text": "DOWN" } } }
+          ],
+          "min": 0, "max": 1.2
+        }
+      },
+      "targets": [
+        { "expr": "up{app=\"donation-service\", namespace=\"solidarytech\"}", "legendFormat": "donation-service", "refId": "A" },
+        { "expr": "up{app=\"ngo-service\", namespace=\"solidarytech\"}", "legendFormat": "ngo-service", "refId": "B" },
+        { "expr": "up{app=\"volunteer-service\", namespace=\"solidarytech\"}", "legendFormat": "volunteer-service", "refId": "C" }
+      ]
+    },
+    {
+      "title": "Throughput por Servico (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 5 },
+      "datasource": "Prometheus",
+      "description": "Queda brusca no throughput indica inicio de indisponibilidade. Retorno indica recuperacao (scaling, self-healing ou failover DR).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" },
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        { "expr": "sum(rate(donation_request_duration_seconds_count[5m]))", "legendFormat": "Donation", "refId": "A" },
+        { "expr": "sum(rate(ngo_request_duration_seconds_count[5m]))", "legendFormat": "NGO", "refId": "B" },
+        { "expr": "sum(rate(volunteer_request_duration_seconds_count[5m]))", "legendFormat": "Volunteer", "refId": "C" }
+      ]
+    },
+    {
+      "title": "Integridade de Dados & Resiliencia",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Transacoes com Erro (reais)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 13 },
+      "datasource": "Prometheus",
+      "description": "Erros REAIS de processamento (excluindo SQS que e limitacao do Academy). Estas sao transacoes que o usuario tentou mas falharam - diferente de estimativa.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        {
+          "expr": "sum(donation_errors_total{error_type!=\"sqs_publish\"}) or vector(0)",
+          "legendFormat": "Erros reais",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Doacoes Processadas com Sucesso",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 13 },
+      "datasource": "Prometheus",
+      "description": "Total de doacoes processadas com sucesso. Dados sao preservados durante failover via sync bidirecional (INSERT ON CONFLICT).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "donation_processed_total or vector(0)", "legendFormat": "Processadas", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Total Arrecadado (preservado)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 13 },
+      "datasource": "Prometheus",
+      "description": "Valor total arrecadado. Este valor e preservado integralmente durante failover/failback via sync bidirecional de dados entre regioes.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "dark-green", "value": 10000 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "donation_amount_brl_total or vector(0)", "legendFormat": "R$", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Ticket Medio (R$)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 13 },
+      "datasource": "Prometheus",
+      "description": "Valor medio por doacao. Usado para estimar impacto financeiro de indisponibilidade.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        { "expr": "(donation_amount_brl_total / donation_processed_total) or vector(0)", "legendFormat": "Ticket Medio", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Erros ao Longo do Tempo (transacoes perdidas reais)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "datasource": "Prometheus",
+      "description": "Cada barra e uma transacao que um usuario tentou e FALHOU. Isso e perda real, nao estimativa. Erros de SQS sao excluidos pois sao limitacao do Academy, nao perda de doacao.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(donation_errors_total{error_type!=\"sqs_publish\"}[5m])", "legendFormat": "{{ error_type }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Doacoes Processadas vs Erros (proporcao)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "datasource": "Prometheus",
+      "description": "Proporcao entre sucesso e erro. Em operacao normal deve ser quase 100% sucesso. Durante downtime, erros aumentam ate que DR assuma ou scaling resolva.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(donation_processed_total[5m])", "legendFormat": "Sucesso", "refId": "A" },
+        { "expr": "increase(donation_errors_total{error_type!=\"sqs_publish\"}[5m])", "legendFormat": "Erros (reais)", "refId": "B" }
+      ]
+    },
+    {
+      "title": "Impacto Financeiro (Estimativa Conservadora)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Perda por Erros Reais (R$)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 26 },
+      "datasource": "Prometheus",
+      "description": "Transacoes que falharam por erro de validacao/processamento. Formula: erros_reais * ticket_medio. Exclui erros SQS (limitacao Academy, doacao foi processada).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 5000 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "expr": "clamp_min(\n  (sum(donation_errors_total{error_type!=\"sqs_publish\"}) or vector(0))\n  * ((donation_amount_brl_total / donation_processed_total) or vector(0)),\n  0\n)",
+          "legendFormat": "Perda por erros",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Perda por RTO Window (R$)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 26 },
+      "datasource": "Prometheus",
+      "description": "Estimativa de perda durante os 58s de failover. Formula: throughput_medio * RTO_segundos * ticket_medio. Estas transacoes sao irrecuperaveis — cliente recebeu timeout.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 10000 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "expr": "clamp_min(\n  (sum(rate(donation_request_duration_seconds_count[30m])) or vector(0.07))\n  * 58\n  * ((donation_amount_brl_total / donation_processed_total) or vector(200)),\n  0\n)",
+          "legendFormat": "Perda por RTO",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Downtime (ultima 1h)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 26 },
+      "datasource": "Prometheus",
+      "description": "Minutos de indisponibilidade na ultima hora. O scrape do Prometheus e a cada 15s, entao periodos menores podem nao ser capturados.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "m",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "expr": "(1 - avg(avg_over_time(up{namespace=\"solidarytech\"}[1h]))) * 60", "legendFormat": "Downtime", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Estrategia de Resiliencia",
+      "type": "text",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 26 },
+      "options": {
+        "mode": "markdown",
+        "content": "### O que SE PERDE no failover (58s)\n- Requests **in-flight** no momento da queda\n- Requests que o cliente **tentou** durante 58s\n- Nao ha fila intermediaria — cliente recebe erro\n- **Estimativa: ~4 transacoes** (throughput atual)\n\n### O que se PRESERVA\n- Dados **ja commitados** no banco (sync bidirecional)\n- Dados criados **no DR** durante operacao\n- Dados do **failback** (merge antes de voltar)\n\n### Mitigacoes aplicadas\n1. RTO 58s (meta 300s) — reduz janela de perda\n2. Self-healing e HPA atuam ANTES de acionar DR\n3. Sync pre-failover reduz RPO de dados persistidos\n4. Em prod: adicionar SQS como buffer (retry automatico)"
+      }
+    },
+    {
+      "title": "Failover Timeline",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Pods Running vs Desired",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 32 },
+      "datasource": "Prometheus",
+      "description": "Gap entre desired e ready indica: scaling em progresso, pod reiniciando, ou migracao DR. Desired subindo = HPA ativou scaling. Ready caindo = pods morrendo.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "sum(kube_deployment_spec_replicas{namespace=\"solidarytech\"})", "legendFormat": "Desired", "refId": "A" },
+        { "expr": "sum(kube_deployment_status_replicas_ready{namespace=\"solidarytech\"})", "legendFormat": "Ready", "refId": "B" },
+        { "expr": "sum(kube_deployment_spec_replicas{namespace=\"solidarytech\"}) - sum(kube_deployment_status_replicas_ready{namespace=\"solidarytech\"})", "legendFormat": "Gap (scaling/migrating)", "refId": "C" }
+      ]
+    },
+    {
+      "title": "Restarts por Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 32 },
+      "datasource": "Prometheus",
+      "description": "Restarts indicam self-healing atuando. Kubernetes reinicia automaticamente pods que falham no liveness probe antes de precisar acionar DR.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1, "showPoints": "never" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"solidarytech\"}[5m])", "legendFormat": "{{ pod }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Alertas Ativos",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 39 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 50, "lineWidth": 1, "showPoints": "never", "stacking": { "mode": "normal" } },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        { "expr": "count(ALERTS{alertstate=\"firing\", namespace=\"solidarytech\"}) by (alertname)", "legendFormat": "{{ alertname }}", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Error Rate (degradacao pre-failover)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 39 },
+      "datasource": "Prometheus",
+      "description": "Aumento na error rate e o primeiro sinal de degradacao. Se persistir acima de 5%, considerar failover para DR.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "showPoints": "never", "thresholdsStyle": { "mode": "line+area" } },
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 5 } ] }
+        }
+      },
+      "targets": [
+        { "expr": "(sum(rate(donation_errors_total{error_type!=\"sqs_publish\"}[5m])) / (sum(rate(donation_request_duration_seconds_count[5m])) + 0.001)) * 100", "legendFormat": "Error Rate", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["solidarytech", "dr", "disaster-recovery", "failover"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Disaster Recovery - Status & Impacto",
+  "uid": "solidarytech-dr-status",
+  "version": 1
+}

@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: solidarytech-ingress
+  namespace: solidarytech
+  labels:
+    team: solidarytech
+    cost-center: ngo-core
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api/v1/ngos
+            pathType: Prefix
+            backend:
+              service:
+                name: ngo-service
+                port:
+                  number: 8080
+          - path: /api/v1/donations
+            pathType: Prefix
+            backend:
+              service:
+                name: donation-service
+                port:
+                  number: 8081
+          - path: /api/v1/volunteers
+            pathType: Prefix
+            backend:
+              service:
+                name: volunteer-service
+                port:
+                  number: 8082
+          - path: /api/v1/campaigns
+            pathType: Prefix
+            backend:
+              service:
+                name: volunteer-service
+                port:
+                  number: 8082
+          - path: /api/v1/match
+            pathType: Prefix
+            backend:
+              service:
+                name: volunteer-service
+                port:
+                  number: 8082

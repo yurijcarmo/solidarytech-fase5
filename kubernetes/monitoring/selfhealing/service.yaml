@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfhealing-handler
+  namespace: monitoring
+  labels:
+    app: selfhealing-handler
+    team: solidarytech
+spec:
+  type: ClusterIP
+  selector:
+    app: selfhealing-handler
+  ports:
+    - name: webhook
+      port: 9095
+      targetPort: 9095
+      protocol: TCP

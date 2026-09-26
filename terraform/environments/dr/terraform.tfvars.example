@@ -1,0 +1,8 @@
+aws_region   = "us-west-2"
+project_name = "solidarytech"
+db_username  = "solidarytech_admin"
+db_password  = "CHANGE_ME_BEFORE_APPLY"
+
+# AWS Academy Learner Lab IAM Roles
+eks_cluster_role_name = "CHANGE_ME_LabEksClusterRole_NAME"
+eks_node_role_name    = "CHANGE_ME_LabEksNodeRole_NAME"

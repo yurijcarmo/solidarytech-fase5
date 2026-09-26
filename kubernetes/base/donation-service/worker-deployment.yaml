@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: donation-worker
+  namespace: solidarytech
+  labels:
+    app: donation-service
+    component: worker
+    version: v1
+    team: solidarytech
+    cost-center: ngo-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: donation-service
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: donation-service
+        component: worker
+        version: v1
+        team: solidarytech
+        cost-center: ngo-core
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8091"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: donation-worker
+          image: 617261142320.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:latest
+          imagePullPolicy: Always
+          command: ["python", "worker.py"]
+          ports:
+            - containerPort: 8091
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 400m
+              memory: 384Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8091
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          envFrom:
+            - configMapRef:
+                name: donation-service-config
+          env:
+            - name: WORKER_MODE
+              value: "true"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: DATABASE_URL
+            - name: SQS_QUEUE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: SQS_QUEUE_URL
