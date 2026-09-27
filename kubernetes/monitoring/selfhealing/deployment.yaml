@@ -17,6 +17,47 @@ data:
 
     NAMESPACE = "solidarytech"
 
+    AUTHORIZED_REMEDIATIONS = {
+        "PodCrashLooping": "auto-restart",
+        "HighMemoryUsage": "auto-scalable",
+        "HighCPUUsage": "auto-scalable",
+        "DonationQueueBacklog": "auto-scale-worker",
+    }
+
+    ALLOWED_DEPLOYMENTS = {
+        "donation-service",
+        "donation-worker",
+        "ngo-service",
+        "volunteer-service",
+    }
+
+    def deployment_from_pod(pod_name):
+        parts = pod_name.rsplit("-", 2)
+
+        if len(parts) != 3:
+            return None
+
+        deployment = parts[0]
+
+        if deployment not in ALLOWED_DEPLOYMENTS:
+            return None
+
+        return deployment
+
+    def is_remediation_authorized(status, alert_name, labels):
+        if status != "firing":
+            return False, "alert_not_firing"
+
+        expected = AUTHORIZED_REMEDIATIONS.get(alert_name)
+        if expected is None:
+            return False, "alert_not_authorized"
+
+        actual = labels.get("remediation")
+        if actual != expected:
+            return False, f"expected_remediation={expected}"
+
+        return True, "authorized"
+
     def kubectl(*args):
         cmd = ["kubectl", "-n", NAMESPACE] + list(args)
         logger.info("Executing: %s", " ".join(cmd))
@@ -92,9 +133,40 @@ data:
 
                 logger.info("[ALERT] %s | pod=%s | status=%s", alert_name, pod_name, status)
 
-                if status == "resolved":
-                    logger.info("[SELFHEAL] Alert resolved: %s", alert_name)
+                authorized, reason = is_remediation_authorized(
+                    status, alert_name, labels
+                )
+
+                if not authorized:
+                    logger.warning(
+                        "[SELFHEAL] Remediation blocked: alert=%s status=%s reason=%s",
+                        alert_name,
+                        status,
+                        reason,
+                    )
                     continue
+
+                if alert_name in (
+                    "PodCrashLooping",
+                    "HighMemoryUsage",
+                    "HighCPUUsage",
+                ):
+                    deployment = deployment_from_pod(pod_name)
+
+                    if deployment is None:
+                        logger.warning(
+                            "[SELFHEAL] Remediation blocked: "
+                            "alert=%s pod=%s deployment_not_allowed",
+                            alert_name,
+                            pod_name,
+                        )
+                        continue
+
+                logger.info(
+                    "[SELFHEAL] Remediation authorized: alert=%s remediation=%s",
+                    alert_name,
+                    labels.get("remediation"),
+                )
 
                 result = "no_action"
                 if alert_name == "PodCrashLooping":
@@ -138,26 +210,28 @@ metadata:
     app: selfhealing-handler
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: selfhealing-handler
+  namespace: solidarytech
   labels:
     app: selfhealing-handler
 rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log"]
-    verbs: ["get", "list", "watch", "delete"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "deployments/scale", "replicasets"]
-    verbs: ["get", "list", "watch", "update", "patch"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: selfhealing-handler
+  namespace: solidarytech
   labels:
     app: selfhealing-handler
 subjects:
@@ -165,7 +239,7 @@ subjects:
     name: selfhealing-handler
     namespace: monitoring
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: selfhealing-handler
   apiGroup: rbac.authorization.k8s.io
 ---

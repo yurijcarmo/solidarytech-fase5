@@ -28,6 +28,9 @@ resources:
   - promtail/rbac.yaml
   # OpenTelemetry
   - otel-collector.yaml
+  # Incident Management
+  - incident-receiver/deployment.yaml
+
   # Self-Healing
   - selfhealing/deployment.yaml
   - selfhealing/service.yaml

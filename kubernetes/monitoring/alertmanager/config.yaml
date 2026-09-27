@@ -17,6 +17,7 @@ data:
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
+
       routes:
         - receiver: selfhealing-webhook
           match:
@@ -54,22 +55,22 @@ data:
     receivers:
       - name: default
         webhook_configs:
-          - url: http://selfhealing-handler:9095/webhook
+          - url: http://incident-receiver:8080/webhook
             send_resolved: true
 
       - name: selfhealing-webhook
         webhook_configs:
           - url: http://selfhealing-handler:9095/webhook
-            send_resolved: true
+            send_resolved: false
 
       - name: critical-alerts
         webhook_configs:
-          - url: http://selfhealing-handler:9095/webhook
+          - url: http://incident-receiver:8080/webhook
             send_resolved: true
 
       - name: warning-alerts
         webhook_configs:
-          - url: http://selfhealing-handler:9095/webhook
+          - url: http://incident-receiver:8080/webhook
             send_resolved: true
 
     inhibit_rules:
