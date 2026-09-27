@@ -41,7 +41,7 @@ cat << HEADER
 | **Data/Hora** | $TIMESTAMP |
 | **Namespace** | $NAMESPACE |
 | **Pod Afetado** | ${POD_NAME:-N/A} |
-| **Gerado por** | AIOps Self-Healing System |
+| **Gerado por** | Automated Incident RCA |
 
 ---
 
@@ -154,7 +154,7 @@ Com base nos dados coletados, as seguintes causas devem ser investigadas:
 ### Timeline
 | Horario | Evento |
 |---------|--------|
-| $TIMESTAMP | Incidente detectado pelo AIOps |
+| $TIMESTAMP | Incidente detectado pela plataforma de observabilidade |
 | $TIMESTAMP | RCA automatizado iniciado |
 | | [Preencher demais eventos] |
 
@@ -181,7 +181,7 @@ Com base nos dados coletados, as seguintes causas devem ser investigadas:
 - [Item 2]
 
 ---
-_Relatorio gerado automaticamente pelo AIOps Self-Healing System da SolidaryTech._
+_Relatorio gerado automaticamente pelo fluxo de Incident Management da SolidaryTech._
 _Incident ID: ${INCIDENT_ID} | Timestamp: ${TIMESTAMP}_
 FOOTER
 }
