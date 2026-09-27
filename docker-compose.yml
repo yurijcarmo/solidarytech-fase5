@@ -140,6 +140,9 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.161.0
+    environment:
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY}
+      NEW_RELIC_OTLP_ENDPOINT: ${NEW_RELIC_OTLP_ENDPOINT}
     ports:
       - "4317:4317"
       - "4318:4318"

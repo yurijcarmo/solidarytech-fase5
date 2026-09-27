@@ -28,6 +28,11 @@ data:
         namespace: "solidarytech"
       otlphttp/loki:
         endpoint: "http://loki.monitoring:3100/otlp"
+      otlp_http/newrelic:
+        endpoint: ${env:NEW_RELIC_OTLP_ENDPOINT}
+        headers:
+          api-key: ${env:NEW_RELIC_LICENSE_KEY}
+        compression: gzip
       debug:
         verbosity: basic
 
@@ -36,7 +41,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [otlphttp/loki, debug]
+          exporters: [otlphttp/loki, debug, otlp_http/newrelic]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, batch]
@@ -66,6 +71,14 @@ spec:
           image: otel/opentelemetry-collector-contrib:0.161.0
           args:
             - "--config=/etc/otel/otel-collector-config.yaml"
+          env:
+            - name: NEW_RELIC_OTLP_ENDPOINT
+              value: "https://otlp.nr-data.net"
+            - name: NEW_RELIC_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: newrelic-otel
+                  key: license-key
           ports:
             - containerPort: 4317
               protocol: TCP
