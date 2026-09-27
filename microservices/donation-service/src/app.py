@@ -1,16 +1,18 @@
 import json
 import logging
-import math
 import os
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 import boto3
 import redis
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.propagate import inject
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -25,32 +27,44 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(SERVICE_NAME)
 
 CURRENCY_RATES = {
-    "BRL": 1.0,
-    "USD": 5.45,
-    "EUR": 5.95,
-    "GBP": 6.85,
-    "JPY": 0.037,
+    "BRL": Decimal("1.00"),
+    "USD": Decimal("5.45"),
+    "EUR": Decimal("5.95"),
+    "GBP": Decimal("6.85"),
+    "JPY": Decimal("0.037"),
 }
 SUPPORTED_CURRENCIES = list(CURRENCY_RATES.keys())
+MONEY_QUANTUM = Decimal("0.01")
 
+HTTP_REQUESTS = Counter(
+    "http_requests_total",
+    "Total HTTP requests handled by the service",
+    ["service", "method", "endpoint", "status"],
+)
+HTTP_REQUEST_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["service", "method", "endpoint", "status"],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+)
 DONATION_DURATION = Histogram(
     "donation_request_duration_seconds",
-    "Time spent processing donation requests",
+    "Time spent handling donation creation requests",
     ["method", "endpoint", "status"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 DONATION_ERRORS = Counter(
     "donation_errors_total",
-    "Total donation processing errors",
+    "Total donation domain and integration errors",
     ["error_type"],
 )
 DONATION_PROCESSED = Counter(
     "donation_processed_total",
-    "Total donations processed successfully",
+    "Total donations accepted for asynchronous processing",
 )
 DONATION_SLO_LATENCY = Histogram(
     "donation_slo_latency_seconds",
-    "Donation processing latency for SLO calculation",
+    "Donation request latency for SLO analysis",
     buckets=[0.1, 0.25, 0.5, 1.0, 2.0],
 )
 DONATION_BY_CURRENCY = Counter(
@@ -63,21 +77,24 @@ DONATION_AMOUNT_BRL = Counter(
     "Total donation amount received in BRL",
 )
 
-request_timestamps = []
-error_count = 0
-total_count = 0
+_telemetry_initialized = False
 
 
 def setup_telemetry(app):
-    resource = Resource.create({"service.name": SERVICE_NAME})
-    provider = TracerProvider(resource=resource)
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
-    try:
-        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-    except Exception:
-        logger.warning("OTLP exporter unavailable, tracing disabled")
-    trace.set_tracer_provider(provider)
+    global _telemetry_initialized
+
+    if not _telemetry_initialized:
+        resource = Resource.create({"service.name": SERVICE_NAME})
+        provider = TracerProvider(resource=resource)
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+        try:
+            exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+        except Exception:
+            logger.warning("OTLP exporter unavailable, tracing disabled")
+        trace.set_tracer_provider(provider)
+        _telemetry_initialized = True
+
     FlaskInstrumentor().instrument_app(app)
 
 
@@ -111,13 +128,12 @@ def get_redis_client():
 
 
 def write_audit_log(dynamo_table, donation, transaction_id, original_currency, original_amount, converted_amount):
+    created_at = datetime.now(timezone.utc).isoformat()
     try:
         dynamo_table.put_item(Item={
             "transaction_id": transaction_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at,
             "donation_id": donation.id,
-            "donor_name": donation.donor_name,
-            "donor_email": donation.donor_email,
             "ngo_id": donation.ngo_id,
             "original_currency": original_currency,
             "original_amount": str(original_amount),
@@ -127,8 +143,23 @@ def write_audit_log(dynamo_table, donation, transaction_id, original_currency, o
             "status": donation.status,
             "event": "DONATION_CREATED",
         })
-    except Exception as e:
-        logger.error("Failed to write DynamoDB audit log: %s", e)
+        return created_at
+    except Exception as exc:
+        DONATION_ERRORS.labels(error_type="audit_write").inc()
+        logger.error("Failed to write DynamoDB audit log: %s", exc)
+        return None
+
+
+def _parse_amount(value):
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("Invalid amount value") from None
+
+    if not amount.is_finite() or amount <= 0:
+        raise ValueError("Amount must be a positive finite number")
+
+    return amount
 
 
 def create_app():
@@ -141,6 +172,44 @@ def create_app():
 
     db.init_app(app)
     setup_telemetry(app)
+
+    @app.before_request
+    def start_request_timer():
+        g.request_started_at = time.perf_counter()
+
+    @app.after_request
+    def record_request_metrics(response):
+        started_at = getattr(g, "request_started_at", None)
+        if started_at is None:
+            return response
+
+        duration = time.perf_counter() - started_at
+        endpoint = request.url_rule.rule if request.url_rule else request.path
+        status = str(response.status_code)
+
+        HTTP_REQUESTS.labels(
+            service=SERVICE_NAME,
+            method=request.method,
+            endpoint=endpoint,
+            status=status,
+        ).inc()
+        HTTP_REQUEST_DURATION.labels(
+            service=SERVICE_NAME,
+            method=request.method,
+            endpoint=endpoint,
+            status=status,
+        ).observe(duration)
+
+        if request.method == "POST" and endpoint == "/api/v1/donations":
+            DONATION_DURATION.labels(
+                method=request.method,
+                endpoint=endpoint,
+                status=status,
+            ).observe(duration)
+            DONATION_SLO_LATENCY.observe(duration)
+
+        return response
+
     app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/metrics": make_wsgi_app()})
 
     with app.app_context():
@@ -148,8 +217,8 @@ def create_app():
             try:
                 db.create_all()
                 break
-            except Exception as e:
-                logger.warning("DB not ready (attempt %d/10): %s", attempt + 1, e)
+            except Exception as exc:
+                logger.warning("DB not ready (attempt %d/10): %s", attempt + 1, exc)
                 time.sleep(3)
         else:
             logger.error("Failed to connect to database after 10 attempts")
@@ -173,22 +242,37 @@ def create_app():
 
     @app.route("/region")
     def region():
-        region = os.getenv("AWS_REGION", "unknown")
+        region_name = os.getenv("AWS_REGION", "unknown")
         cluster = os.getenv("CLUSTER_NAME", "unknown")
         return jsonify({
-            "region": region,
+            "region": region_name,
             "cluster": cluster,
             "service": SERVICE_NAME,
-            "role": "dr" if "dr" in cluster.lower() or region == "us-west-2" else "production",
+            "role": "dr" if "dr" in cluster.lower() or region_name == "us-west-2" else "production",
         })
 
     @app.route("/ready")
     def ready():
+        checks = {"database": "ok"}
+
         try:
             db.session.execute(db.text("SELECT 1"))
-            return jsonify({"status": "ready"})
         except Exception:
-            return jsonify({"status": "not_ready"}), 503
+            checks["database"] = "unavailable"
+            return jsonify({"status": "not_ready", "checks": checks}), 503
+
+        if sqs_queue_url:
+            try:
+                get_sqs_client().get_queue_attributes(
+                    QueueUrl=sqs_queue_url,
+                    AttributeNames=["QueueArn"],
+                )
+                checks["sqs"] = "ok"
+            except Exception:
+                checks["sqs"] = "unavailable"
+                return jsonify({"status": "not_ready", "checks": checks}), 503
+
+        return jsonify({"status": "ready", "checks": checks})
 
     @app.route("/api/v1/donations/currencies", methods=["GET"])
     def list_currencies():
@@ -201,7 +285,7 @@ def create_app():
             result = {
                 "supported_currencies": SUPPORTED_CURRENCIES,
                 "base_currency": "BRL",
-                "rates": {k: {"to_brl": v, "description": _currency_name(k)} for k, v in CURRENCY_RATES.items()},
+                "rates": {k: {"to_brl": float(v), "description": _currency_name(k)} for k, v in CURRENCY_RATES.items()},
                 "example": "Para doar 100 USD, o valor convertido sera 100 * 5.45 = 545.00 BRL",
             }
 
@@ -235,51 +319,47 @@ def create_app():
 
     @app.route("/api/v1/donations", methods=["POST"])
     def create_donation():
-        global error_count, total_count
-        start_time = time.time()
         with tracer.start_as_current_span("create_donation") as span:
-            data = request.get_json()
-            if not data or not data.get("donor_name") or not data.get("amount") or not data.get("payment_method"):
+            data = request.get_json(silent=True)
+            required = ("donor_name", "amount", "payment_method", "ngo_id")
+            if not data or any(data.get(field) in (None, "") for field in required):
                 DONATION_ERRORS.labels(error_type="validation").inc()
-                error_count += 1
-                total_count += 1
-                return jsonify({"error": "donor_name, amount, and payment_method are required"}), 400
+                return jsonify({"error": "donor_name, amount, payment_method, and ngo_id are required"}), 400
 
-            original_currency = data.get("currency", "BRL").upper()
+            try:
+                ngo_id = int(data["ngo_id"])
+                if ngo_id <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                DONATION_ERRORS.labels(error_type="validation").inc()
+                return jsonify({"error": "ngo_id must be a positive integer"}), 400
+
+            original_currency = str(data.get("currency", "BRL")).upper()
             if original_currency not in SUPPORTED_CURRENCIES:
                 DONATION_ERRORS.labels(error_type="invalid_currency").inc()
-                error_count += 1
-                total_count += 1
                 return jsonify({
-                    "error": f"Unsupported currency: {original_currency}. "
-                             f"Supported: {SUPPORTED_CURRENCIES}"
+                    "error": f"Unsupported currency: {original_currency}. Supported: {SUPPORTED_CURRENCIES}"
                 }), 400
 
             try:
-                original_amount = float(data["amount"])
-            except (ValueError, TypeError):
+                original_amount = _parse_amount(data["amount"])
+            except ValueError as exc:
                 DONATION_ERRORS.labels(error_type="validation").inc()
-                error_count += 1
-                total_count += 1
-                return jsonify({"error": "Invalid amount value"}), 400
-            if original_amount <= 0 or math.isnan(original_amount) or math.isinf(original_amount):
-                DONATION_ERRORS.labels(error_type="validation").inc()
-                error_count += 1
-                total_count += 1
-                return jsonify({"error": "Amount must be a positive finite number"}), 400
-            conversion_rate = CURRENCY_RATES[original_currency]
-            amount_brl = round(original_amount * conversion_rate, 2)
+                return jsonify({"error": str(exc)}), 400
+
+            amount_brl = (original_amount * CURRENCY_RATES[original_currency]).quantize(
+                MONEY_QUANTUM,
+                rounding=ROUND_HALF_UP,
+            )
 
             transaction_id = str(uuid.uuid4())
             span.set_attribute("donation.transaction_id", transaction_id)
-            span.set_attribute("donation.original_amount", original_amount)
-            span.set_attribute("donation.original_currency", original_currency)
-            span.set_attribute("donation.amount_brl", amount_brl)
+            span.set_attribute("donation.currency", original_currency)
 
             donation = Donation(
                 donor_name=data["donor_name"],
                 donor_email=data.get("donor_email", ""),
-                ngo_id=data.get("ngo_id", 0),
+                ngo_id=ngo_id,
                 amount=amount_brl,
                 original_amount=original_amount,
                 original_currency=original_currency,
@@ -292,42 +372,53 @@ def create_app():
             db.session.commit()
 
             DONATION_BY_CURRENCY.labels(currency=original_currency).inc()
-            DONATION_AMOUNT_BRL.inc(amount_brl)
+            DONATION_AMOUNT_BRL.inc(float(amount_brl))
 
+            audit_created_at = None
             if dynamo_table:
-                write_audit_log(dynamo_table, donation, transaction_id, original_currency, original_amount, amount_brl)
+                audit_created_at = write_audit_log(
+                    dynamo_table,
+                    donation,
+                    transaction_id,
+                    original_currency,
+                    original_amount,
+                    amount_brl,
+                )
 
             if sqs_queue_url:
                 try:
+                    trace_context = {}
+                    inject(trace_context)
                     sqs = get_sqs_client()
                     sqs.send_message(
                         QueueUrl=sqs_queue_url,
                         MessageBody=json.dumps({
                             "donation_id": donation.id,
                             "transaction_id": transaction_id,
-                            "amount": amount_brl,
-                            "original_amount": original_amount,
+                            "amount": float(amount_brl),
+                            "original_amount": float(original_amount),
                             "original_currency": original_currency,
                             "ngo_id": donation.ngo_id,
+                            "audit_created_at": audit_created_at,
+                            "trace_context": trace_context,
                         }),
                     )
                     span.add_event("message_sent_to_sqs")
-                except Exception as e:
-                    logger.error("Failed to send to SQS: %s", e)
+                except Exception as exc:
+                    logger.error("Failed to send donation %d to SQS: %s", donation.id, exc)
                     DONATION_ERRORS.labels(error_type="sqs_publish").inc()
 
             if redis_client:
                 redis_client.delete("donations:stats")
 
-            duration = time.time() - start_time
-            DONATION_DURATION.labels(method="POST", endpoint="/api/v1/donations", status="201").observe(duration)
-            DONATION_SLO_LATENCY.observe(duration)
             DONATION_PROCESSED.inc()
-            total_count += 1
-            request_timestamps.append(time.time())
 
-            logger.info("Donation created: id=%d tx=%s original=%.2f %s converted=%.2f BRL",
-                        donation.id, transaction_id, original_amount, original_currency, amount_brl)
+            logger.info(
+                "Donation accepted: id=%d tx=%s currency=%s",
+                donation.id,
+                transaction_id,
+                original_currency,
+            )
             return jsonify(donation.to_dict()), 201
 
     @app.route("/api/v1/donations/stats", methods=["GET"])
@@ -361,23 +452,19 @@ def create_app():
     @app.route("/api/v1/donations/metrics/golden", methods=["GET"])
     def golden_metrics():
         with tracer.start_as_current_span("golden_metrics"):
-            now = time.time()
-            recent = [t for t in request_timestamps if now - t < 300]
-            throughput = len(recent) / 300.0 if recent else 0
-            error_rate = (error_count / total_count * 100) if total_count > 0 else 0
-
             return jsonify({
                 "golden_metrics": {
-                    "throughput_rps": round(throughput, 4),
-                    "error_rate_percent": round(error_rate, 2),
-                    "total_requests": total_count,
-                    "total_errors": error_count,
+                    "traffic": "http_requests_total",
+                    "errors": "http_requests_total{status=~\"5..\"}",
+                    "latency": "http_request_duration_seconds",
+                    "worker_saturation": "donation_worker_messages_in_progress",
                 },
                 "slo": {
                     "latency_target_ms": 500,
                     "availability_target_percent": 99.9,
                     "error_budget_percent": 0.1,
                 },
+                "metrics_source": "/metrics",
             })
 
     return app

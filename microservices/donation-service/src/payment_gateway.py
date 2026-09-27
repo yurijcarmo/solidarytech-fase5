@@ -21,7 +21,6 @@ RESPONSE_CODES = {
 
 def authorize_payment(amount, currency, payment_method):
     with tracer.start_as_current_span("payment_gateway.authorize") as span:
-        span.set_attribute("payment.amount", float(amount))
         span.set_attribute("payment.currency", currency)
         span.set_attribute("payment.method", payment_method)
 
@@ -53,8 +52,6 @@ def authorize_payment(amount, currency, payment_method):
 
         span.set_attribute("payment.status", status)
         span.set_attribute("payment.approved", approved)
-        if authorization_code:
-            span.set_attribute("payment.authorization_code", authorization_code)
         if not approved:
             span.set_attribute("error", True)
 
@@ -67,9 +64,10 @@ def authorize_payment(amount, currency, payment_method):
         }
 
         logger.info(
-            "Payment gateway: amount=%.2f %s method=%s status=%s auth=%s",
-            float(amount), currency, payment_method,
-            status, authorization_code or "N/A",
+            "Payment gateway: currency=%s method=%s status=%s",
+            currency,
+            payment_method,
+            status,
         )
 
         return result
