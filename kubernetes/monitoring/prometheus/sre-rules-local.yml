@@ -1,0 +1,124 @@
+groups:
+  - name: solidarytech-sli-recording
+    interval: 15s
+    rules:
+      - record: solidarytech:donation:request_rate5m
+        expr: |
+          sum(rate(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[5m]))
+
+      - record: solidarytech:donation:error_ratio5m
+        expr: |
+          (
+            (sum(rate(http_requests_total{service="donation-service", status=~"5..", endpoint!~"/health|/ready|/metrics"}[5m])) or vector(0))
+            /
+            clamp_min(sum(rate(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[5m])), 1e-9)
+          )
+
+      - record: solidarytech:donation:latency_p95_seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_request_duration_seconds_bucket{service="donation-service", endpoint!~"/health|/ready|/metrics"}[5m])
+            )
+          )
+
+      - record: solidarytech:donation:availability_ratio30d
+        expr: |
+          (
+            1 - (
+              (sum(increase(http_requests_total{service="donation-service", status=~"5..", endpoint!~"/health|/ready|/metrics"}[30d])) or vector(0))
+              /
+              clamp_min(sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])), 1)
+            )
+          )
+          and on()
+          (sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])) > 0)
+
+      - record: solidarytech:donation:latency_compliance_ratio30d
+        expr: |
+          (
+            sum(increase(http_request_duration_seconds_bucket{service="donation-service", le="0.5", endpoint!~"/health|/ready|/metrics"}[30d]))
+            /
+            clamp_min(sum(increase(http_request_duration_seconds_count{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])), 1)
+          )
+          and on()
+          (sum(increase(http_request_duration_seconds_count{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])) > 0)
+
+      - record: solidarytech:donation:error_budget_remaining_percent30d
+        expr: |
+          clamp_max(
+            clamp_min(
+              (
+                1 - (
+                  (
+                    (sum(increase(http_requests_total{service="donation-service", status=~"5..", endpoint!~"/health|/ready|/metrics"}[30d])) or vector(0))
+                    /
+                    clamp_min(sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])), 1)
+                  ) / 0.001
+                )
+              ) * 100,
+              0
+            ),
+            100
+          )
+          and on()
+          (sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[30d])) > 0)
+
+      - record: solidarytech:donation:error_budget_burn_rate1h
+        expr: |
+          (
+            (
+              (sum(increase(http_requests_total{service="donation-service", status=~"5..", endpoint!~"/health|/ready|/metrics"}[1h])) or vector(0))
+              /
+              clamp_min(sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[1h])), 1)
+            ) / 0.001
+          )
+          and on()
+          (sum(increase(http_requests_total{service="donation-service", endpoint!~"/health|/ready|/metrics"}[1h])) > 0)
+
+  - name: solidarytech-sre-alerts
+    rules:
+      - alert: DonationErrorBudgetFastBurn
+        expr: solidarytech:donation:error_budget_burn_rate1h > 10
+        for: 5m
+        labels:
+          severity: critical
+          service: donation-service
+          team: solidarytech
+        annotations:
+          summary: "Donation error budget is burning too fast"
+          description: "The 99.9% availability error budget is being consumed at {{ $value | printf \"%.2f\" }}x over the last hour."
+
+      - alert: DonationErrorBudgetSlowBurn
+        expr: solidarytech:donation:error_budget_burn_rate1h > 2
+        for: 30m
+        labels:
+          severity: warning
+          service: donation-service
+          team: solidarytech
+        annotations:
+          summary: "Donation error budget burn rate is elevated"
+          description: "The error budget burn rate has remained above 2x for 30 minutes."
+
+      - alert: DonationLatencySLOBreach
+        expr: solidarytech:donation:latency_p95_seconds5m > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: donation-service
+          team: solidarytech
+        annotations:
+          summary: "Donation p95 latency is above 500 ms"
+          description: "The donation-service p95 latency has exceeded the 500 ms objective for 10 minutes."
+
+      - alert: DonationWorkerStalled
+        expr: (up{job="donation-worker"} == 0) or ((time() - donation_worker_last_successful_poll_timestamp_seconds) > 60)
+        for: 2m
+        labels:
+          severity: critical
+          service: donation-worker
+          team: solidarytech
+        annotations:
+          summary: "Donation worker is not polling SQS"
+          description: "The donation worker is unreachable or has not completed a successful SQS poll for more than 60 seconds."

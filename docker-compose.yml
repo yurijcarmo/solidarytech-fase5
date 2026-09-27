@@ -119,10 +119,11 @@ services:
     ports:
       - "9091:9090"
     volumes:
-      - ./kubernetes/monitoring/prometheus/prometheus-local.yml:/etc/prometheus/prometheus.yml
+      - ./kubernetes/monitoring/prometheus/prometheus-local.yml:/etc/prometheus/prometheus.yml:ro
+      - ./kubernetes/monitoring/prometheus/sre-rules-local.yml:/etc/prometheus/rules/sre-rules.yml:ro
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=35d
 
   grafana:
     image: grafana/grafana:13.2.2
