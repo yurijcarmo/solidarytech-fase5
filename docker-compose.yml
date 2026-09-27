@@ -146,5 +146,20 @@ services:
     volumes:
       - ./kubernetes/monitoring/otel-collector-local.yaml:/etc/otelcol-contrib/config.yaml
 
+  alertmanager:
+    image: prom/alertmanager:v0.32.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./kubernetes/monitoring/alertmanager/alertmanager-local.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+
+  incident-receiver:
+    image: python:3.13-slim
+    command: python /app/local-incident-receiver.py
+    volumes:
+      - ./scripts/local-incident-receiver.py:/app/local-incident-receiver.py:ro
+
 volumes:
   postgres_data:
