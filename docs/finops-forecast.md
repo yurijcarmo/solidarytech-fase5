@@ -42,11 +42,14 @@ resource "aws_instance" "example" {
 }
 ```
 
-### Politica de Enforcement
+### Politica de Tagging e Validacao
 
-- **Terraform**: `default_tags` no provider AWS garante tags em todos os recursos
-- **AWS Config Rule**: Regra para detectar recursos sem tags obrigatorias
-- **CI/CD**: Checkov valida presenca de tags nos arquivos Terraform
+- **Terraform**: `default_tags` no provider AWS aplica as tags comuns aos recursos suportados pelo provider.
+- **Modulos Terraform**: recursos com necessidade de identificacao adicional recebem tags especificas, como `Name` e `Service`.
+- **CI/CD**: o pipeline executa Checkov sobre o diretorio `terraform/` para analise estatica da infraestrutura como codigo.
+- **Governanca**: a estrategia de tagging permite segmentar custos por projeto, ambiente e centro de custo no AWS Cost Explorer.
+
+> O projeto nao provisiona atualmente uma AWS Config Rule de `required-tags`; portanto, a validacao de tagging e realizada principalmente no codigo Terraform e no pipeline de IaC.
 
 ---
 
@@ -56,29 +59,33 @@ resource "aws_instance" "example" {
 >
 > A estrategia e otimizada para uso temporario: subir o ambiente, testar, gravar o video e destruir.
 
-### Custo por Hora (Producao - 1 node)
+### Custo por Hora (Producao - capacidade inicial do Terraform)
 
 | Recurso | Tipo/Especificacao | Custo/Hora (USD) | Custo/Dia (USD) |
 |---------|--------------------|-----------------:|----------------:|
 | **EKS Control Plane** | 1 cluster | $0.100 | $2.40 |
-| **EC2 (EKS Node)** | 1x t3.medium (On-Demand) | $0.042 | $1.00 |
+| **EC2 (EKS Nodes)** | 2x t3.medium (On-Demand) | $0.084 | $2.02 |
 | **NAT Gateway** | 1x (us-east-1) | $0.045 | $1.08 |
 | **RDS PostgreSQL** | 1x db.t3.micro (Single-AZ) | $0.018 | $0.43 |
 | **ElastiCache Redis** | 1x cache.t3.micro | $0.017 | $0.41 |
 | **S3 / SQS / ECR** | Uso minimo | ~$0.001 | ~$0.02 |
 | | | | |
-| **TOTAL PRODUCAO** | | **~$0.22/h** | **~$5.34/dia** |
+| **TOTAL PRODUCAO** | | **~$0.265/h** | **~$6.36/dia** |
 
 ### Custo DR (Warm Standby - us-west-2) - Sempre Ativo
 
-O ambiente DR roda **permanentemente** com workload minimo para garantir RTO de 3-5 minutos (em teste de lab, o RTO medido foi de 58 segundos). Esta decisao foi tomada porque o custo incremental ($0.205/h) e muito menor que o impacto financeiro de downtime no donation-service (~R$ 7.100 por evento de failover).
+O ambiente DR esta dimensionado no Terraform com workload minimo: um node `t3.medium`, com capacidade de escalar entre 1 e 3 nodes.
+
+Na configuracao atual do laboratorio, o RDS do DR e provisionado como uma instancia `db.t3.micro` independente (`is_read_replica = false`). O modulo Terraform suporta Read Replica e o codigo documenta essa configuracao como a opcao indicada para um ambiente de producao real, mas a replicacao continua nao esta habilitada atualmente.
+
+Os valores de RTO/RPO devem ser tratados como objetivos arquiteturais enquanto nao houver um novo DR drill com medicao reproduzivel.
 
 | Recurso | Tipo/Especificacao | Custo/Hora (USD) | Custo/Dia (USD) |
 |---------|--------------------|-----------------:|----------------:|
 | **EKS Control Plane** | 1 cluster | $0.100 | $2.40 |
 | **EC2 (EKS Node)** | 1x t3.medium | $0.042 | $1.00 |
 | **NAT Gateway** | 1x (us-west-2) | $0.045 | $1.08 |
-| **RDS Read Replica** | 1x db.t3.micro (sync continuo) | $0.018 | $0.43 |
+| **RDS PostgreSQL DR** | 1x db.t3.micro independente no lab | $0.018 | $0.43 |
 | | | | |
 | **TOTAL DR** | | **~$0.205/h** | **~$4.91/dia** |
 
@@ -96,154 +103,153 @@ O ambiente DR roda **permanentemente** com workload minimo para garantir RTO de 
 
 | Cenario | Custo/Dia | Dias Disponiveis |
 |---------|-----------|-----------------|
-| Somente producao | ~$5.34 | **~9 dias** |
-| **Producao + DR Warm Standby** | **~$10.25** | **~4 dias** |
+| Somente producao | ~$6.36 | **~7 dias** |
+| **Producao + DR** | **~$11.28** | **~4 dias** |
 
 ### Plano de Uso Recomendado (Budget $50)
 
 | Fase | Duracao | Custo Estimado |
 |------|---------|---------------|
-| 1. Deploy producao + testes | 1 dia | ~$5.34 |
-| 2. Deploy DR + validacao | 1 dia | ~$10.25 |
-| 3. Drill de failover + ajustes | 1 dia | ~$10.25 |
-| 4. Gravacao do video | 1 dia | ~$10.25 |
-| 5. Margem de seguranca | - | ~$13.91 |
-| **TOTAL ESTIMADO** | ~4 dias (Prod + DR) | **~$36.09** |
+| 1. Deploy producao + testes | 1 dia | ~$6.36 |
+| 2. Deploy DR + validacao | 1 dia | ~$11.28 |
+| 3. Drill de failover + ajustes | 1 dia | ~$11.28 |
+| 4. Gravacao do video | 1 dia | ~$11.28 |
+| 5. Margem de seguranca | - | calculada conforme dias efetivamente utilizados |
+| **TOTAL ESTIMADO** | depende do tempo real de execucao | **monitorar via AWS Cost Explorer/Budgets** |
 
-> **IMPORTANTE:** O deploy de producao e DR e feito em um unico comando (`bash scripts/deploy.sh` — Step 10 provisiona o DR automaticamente). Sempre execute `bash scripts/stop-environment.sh` ao parar de usar (pausa nodes mas mantem control planes e RDS replica). Execute `bash scripts/destroy.sh` quando terminar o projeto.
+> **IMPORTANTE:** O deploy de producao e DR e feito em um unico comando (`bash scripts/deploy.sh` — Step 10 provisiona o DR automaticamente). Sempre execute `bash scripts/stop-environment.sh` ao parar de usar (reduz a capacidade de compute conforme configurado pelo script; recursos persistentes continuam sujeitos a custos). Execute `bash scripts/destroy.sh` quando terminar o projeto.
 
 ---
 
 ## 3. Rightsizing - Analise de Utilizacao
 
-### Metricas Atuais dos Pods (Kubernetes)
+### Recursos Configurados nos Pods
 
-| Servico | CPU Request | CPU Limit | CPU Real (avg) | Mem Request | Mem Limit | Mem Real (avg) | Status |
-|---------|-------------|-----------|----------------|-------------|-----------|----------------|--------|
-| ngo-service | 100m | 250m | ~60m (60%) | 128Mi | 256Mi | ~90Mi (70%) | Adequado |
-| donation-service | 200m | 500m | ~150m (75%) | 256Mi | 512Mi | ~200Mi (78%) | Adequado |
-| volunteer-service | 100m | 250m | ~40m (40%) | 128Mi | 256Mi | ~70Mi (55%) | Otimizavel |
+| Servico | CPU Request | CPU Limit | Mem Request | Mem Limit | Medicao Runtime |
+|---------|-------------|-----------|-------------|-----------|-----------------|
+| ngo-service | 100m | 250m | 192Mi | 384Mi | Pendente |
+| donation-service | 100m | 500m | 256Mi | 512Mi | Pendente |
+| volunteer-service | 100m | 250m | 192Mi | 384Mi | Pendente |
+| donation-worker | 100m | 400m | 192Mi | 384Mi | Pendente |
 
-### Recomendacoes de Rightsizing
+### Estrategia de Rightsizing
 
-| Servico | Acao | Request Atual | Request Recomendado | Economia |
-|---------|------|---------------|---------------------|----------|
-| volunteer-service | Reduzir CPU request | 100m | 75m | ~25% CPU |
-| volunteer-service | Reduzir Mem request | 128Mi | 96Mi | ~25% Mem |
-| donation-service | Manter | 200m / 256Mi | Sem alteracao | - |
-| ngo-service | Manter | 100m / 128Mi | Sem alteracao | - |
+Os `requests` e `limits` acima refletem os manifests Kubernetes atuais.
 
-**Meta de utilizacao:** 60-80% dos requests (equilibrio entre eficiencia e headroom para picos).
+O projeto possui:
+
+- HPA para os workloads;
+- teste de carga progressivo de 5, 15, 30 e 50 req/s;
+- script `scripts/collect-rightsizing-metrics.sh` para capturar CPU e memoria durante os testes.
+
+A medicao runtime no EKS esta pendente porque o cluster configurado atualmente nao esta acessivel. Por esse motivo, nao foi aplicada reducao adicional de CPU ou memoria sem evidencia de utilizacao real.
+
+Quando o ambiente estiver disponivel, o processo sera:
+
+1. executar o coletor de CPU/memoria;
+2. executar o teste de carga progressivo;
+3. comparar consumo medio e picos com os requests;
+4. ajustar requests/limits somente quando houver margem comprovada;
+5. repetir o teste para validar que a alteracao nao degrada SLOs.
+
+**Objetivo de rightsizing:** manter capacidade suficiente para picos e HPA, evitando requests superdimensionados sem comprometer confiabilidade.
 
 ---
 
 ## 4. Recomendacoes de Otimizacao
 
-### Recomendacao 1: Spot Instances para Workloads Nao-Criticos
+As recomendacoes abaixo sao oportunidades a serem avaliadas com base em historico real de utilizacao. Elas nao representam economia ja obtida pelo projeto.
 
-> **Nota AWS Academy:** Spot Instances nao estao disponiveis no Learner Lab (On-Demand only). Esta recomendacao aplica-se ao ambiente de producao real.
+### 1. Rightsizing baseado em metricas
 
-**Economia estimada: ~40% nos nodes nao-criticos**
+Executar o teste de carga progressivo junto ao `scripts/collect-rightsizing-metrics.sh` quando o EKS estiver disponivel.
 
-O volunteer-service nao e time-sensitive e pode tolerar interrupcoes. Em producao, utilizar Spot Instances para seus nodes dedicados.
+Somente apos observar CPU, memoria, picos e comportamento do HPA devem ser alterados `requests` e `limits`.
 
-| Tipo | On-Demand (USD/h) | Spot (USD/h) | Economia |
-|------|--------------------|--------------|---------:|
-| t3.medium | $0.0416 | $0.0125 | **70%** |
+### 2. Spot Instances para workloads tolerantes a interrupcao
 
-**Economia mensal estimada:** ~$18/mes por node spot
+Em um ambiente de producao real, workloads que suportem interrupcoes podem ser avaliados para execucao em capacidade Spot.
 
-### Recomendacao 2: Savings Plans (Compromisso de 1 Ano)
+A economia depende do tipo de instancia, regiao, disponibilidade e preco Spot no momento da execucao; portanto, nao e adotado um percentual fixo neste forecast.
 
-**Economia estimada: ~30% no compute**
+### 3. Savings Plans para carga previsivel
 
-Para workloads que serao executados continuamente (donation-service, ngo-service), contratar Compute Savings Plans de 1 ano.
+Caso o ambiente permaneça ativo continuamente e exista historico suficiente de consumo, avaliar Compute Savings Plans.
 
-| Plano | Sem Savings Plan | Com Savings Plan (1y) | Economia |
-|-------|------------------|-----------------------|---------:|
-| EC2 Compute | $60.74/mes | $42.52/mes | **30%** |
+A decisao deve ser baseada em utilizacao real porque Savings Plans envolvem compromisso financeiro.
 
-**Economia anual estimada:** ~$218/ano
+### 4. Otimizacao de storage de backups
 
-### Recomendacao 3: S3 Intelligent-Tiering para Backups
+Para backups com baixa frequencia de acesso, avaliar lifecycle policies, S3 Intelligent-Tiering ou classes de arquivamento.
 
-**Economia estimada: ~40% no storage de backup**
+A estrategia deve considerar periodo de retencao, frequencia de restore e custo de recuperacao.
 
-Backups antigos (> 30 dias) sao raramente acessados. O Intelligent-Tiering move automaticamente para classes mais baratas.
+### 5. Capacidade do ambiente DR
 
-| Classe | Custo/GB/mes | Uso |
-|--------|-------------|-----|
-| S3 Standard | $0.023 | Backups recentes (< 30 dias) |
-| S3 IA | $0.0125 | Backups antigos (30-90 dias) |
-| S3 Glacier | $0.004 | Backups arquivados (> 90 dias) |
+O Terraform atual mantem capacidade minima de compute no DR.
 
-### Recomendacao 4: Escalar DR Nodes para 0 Fora de Horario Critico
+Scheduled scaling pode ser avaliado em periodos de baixa criticidade. Reduzir o node group para zero exigiria alterar a configuracao atual e aumentaria o RTO, portanto deve ser tratado como decisao arquitetural.
 
-**Economia estimada: ~50% no custo de compute DR**
+### 6. Autoscaling de nodes
 
-O Warm Standby exige que a infra exista, mas os **nodes** podem ser escalados para 0 fora do horario comercial (18h-08h) e finais de semana. O control plane, NAT Gateway e RDS continuam ativos — ao escalar o node de volta, os pods sobem em poucos minutos.
-
-**Economia mensal estimada:** ~$18/mes (node t3.medium desligado ~60% do tempo)
-
-> Isso aumenta o RTO fora do horario comercial de ~1 min para ~8 min (tempo para node subir + pods inicializarem), o que e aceitavel para horarios de baixo volume.
-
-### Recomendacao 5: Karpenter para Autoscaling Inteligente
-
-**Economia estimada: ~20% no compute**
-
-Substituir o Cluster Autoscaler pelo Karpenter para provisionamento mais rapido e eficiente de nodes, escolhendo automaticamente o tipo de instancia mais barato disponivel.
+Karpenter pode ser avaliado futuramente para provisionamento dinamico de capacidade, desde que o comportamento real dos workloads e os requisitos de disponibilidade justifiquem a mudanca.
 
 ---
 
-## 5. Projecao de Custos (Producao Real vs Lab)
+## 5. Projecao de Custos - Baseline da Arquitetura Atual
 
-### Cenario Producao Real (12 Meses - Sem Otimizacoes)
+A projecao abaixo representa um baseline mensal da infraestrutura descrita atualmente no Terraform.
 
-| Periodo | Producao | DR Warm Standby | Total/Mes |
-|---------|----------|-----------------|-----------|
-| Mes 1-6 | $160.00 | $148.00 | $308.00 |
-| Mes 7-12 | $180.00 | $148.00 | $328.00 |
-| **Total Anual** | | | **$3,816.00** |
+### Premissas
 
-### Cenario Producao Real (12 Meses - Com Otimizacoes)
+- 730 horas por mes;
+- 2 nodes `t3.medium` inicialmente em producao;
+- 1 node `t3.medium` inicialmente no DR;
+- 1 cluster EKS por regiao;
+- 1 NAT Gateway por ambiente;
+- 1 endereco IPv4 publico associado a cada NAT Gateway;
+- RDS e ElastiCache utilizam os valores aproximados adotados pelo projeto;
+- custos variaveis de transferencia, processamento do NAT, storage, I/O, logs e crescimento de carga nao estao incluidos.
 
-| Periodo | Producao | DR (nodes off fora horario) | Total/Mes |
-|---------|----------|-----------------------------|-----------|
-| Mes 1-6 | $120.00 | $130.00 | $250.00 |
-| Mes 7-12 | $135.00 | $130.00 | $265.00 |
-| **Total Anual** | | | **$3,090.00** |
+### Baseline Mensal
 
-### Economia Total Estimada (Producao Real)
+| Componente | Producao | DR |
+|------------|---------:|---:|
+| EKS Control Plane | ~$73.00 | ~$73.00 |
+| EC2 / EKS Nodes | ~$60.74 | ~$30.37 |
+| NAT Gateway | ~$32.85 | ~$32.85 |
+| IPv4 publico do NAT | ~$3.65 | ~$3.65 |
+| RDS PostgreSQL | ~$13.14 | ~$13.14 |
+| ElastiCache Redis | ~$12.41 | - |
+| S3 / SQS / ECR (baseline) | ~$0.73 | - |
+| **Total estimado** | **~$196.52/mes** | **~$153.01/mes** |
 
-| Metrica | Valor |
-|---------|-------|
-| Custo anual sem otimizacao | $3,816.00 |
-| Custo anual otimizado | $3,090.00 |
-| **Economia anual** | **$726.00 (19%)** |
+**Baseline combinado:** aproximadamente **$349.53/mes**, antes de custos variaveis.
 
-### Custo do Warm Standby vs Impacto de Downtime
+Aproximando esse baseline para uso temporario:
 
-| Metrica | Valor |
-|---------|-------|
-| Custo mensal do DR Warm Standby | $148.00 |
-| RTO com Cold DR | 30-45 min |
-| RTO com Warm Standby | 3-5 min (teste: 58s) |
-| **Tempo de downtime evitado por incidente** | **~29-44 min** |
-| Perda por failover (estimativa honesta) | ~R$ 7.100 (~4 transacoes in-flight) |
-| Perda evitada vs Cold DR (por incidente) | **~R$ 50.000+** |
+- producao: ~$6.46/dia;
+- producao + DR: ~$11.49/dia;
+- com budget de $50, o limite teorico e pouco acima de 4 dias, mas o ambiente deve ser acompanhado pelo AWS Cost Explorer/Budgets porque trafego, storage, I/O e outros custos variaveis podem reduzir essa margem.
 
-Um unico incidente de queda de regiao ja paga **5+ meses** de DR Warm Standby.
+### Interpretacao
 
-### Cenario AWS Academy Learner Lab
+Este forecast nao representa uma fatura garantida. Ele serve como referencia de planejamento com base na capacidade inicial configurada no Terraform.
 
-| Metrica | Valor |
-|---------|-------|
-| Budget disponivel | $50.00 |
-| Custo/dia (producao + DR) | ~$10.25 |
-| Dias disponiveis | ~4 dias |
-| Uso planejado | 4 dias (Prod + DR Warm Standby) |
-| **Custo estimado** | **~$36.09** |
-| **Margem restante** | **~$13.91 (28%)** |
+O custo real deve ser validado pelo AWS Cost Explorer e, antes de um deploy permanente, pelo AWS Pricing Calculator.
+
+### Limitacoes da Medicao Atual
+
+A coleta runtime de CPU e memoria no EKS esta pendente porque o cluster configurado atualmente nao esta acessivel.
+
+Por isso, o projeto nao apresenta como fatos medidos:
+
+- economia percentual de rightsizing;
+- RTO de um novo drill;
+- perdas financeiras por incidente;
+- economia financeira atribuida a indisponibilidade evitada.
+
+Esses valores devem ser atualizados quando houver nova evidencia reproduzivel.
 
 ---
 
