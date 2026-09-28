@@ -14,4 +14,3 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring:4317"
   OTEL_SERVICE_NAME: "ngo-service"
   ENVIRONMENT: "production"
-  REDIS_URL: "redis://solidarytech-redis.ur9imp.0001.use1.cache.amazonaws.com:6379/0"

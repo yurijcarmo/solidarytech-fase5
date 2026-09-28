@@ -17,4 +17,3 @@ data:
   WORKER_METRICS_PORT: "8091"
   DYNAMODB_TABLE_NAME: "solidarytech-transactions"
   AWS_REGION: "us-east-1"
-  REDIS_URL: "redis://solidarytech-redis.ur9imp.0001.use1.cache.amazonaws.com:6379/0"

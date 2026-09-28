@@ -40,7 +40,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: ngo-service
-          image: 617261142320.dkr.ecr.us-east-1.amazonaws.com/solidarytech/ngo-service:latest
+          image: solidarytech/ngo-service:bootstrap
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -77,3 +77,8 @@ spec:
                 secretKeyRef:
                   name: solidarytech-secrets
                   key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: REDIS_URL

@@ -8,12 +8,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket  = "solidarytech-terraform-state"
-    key     = "environments/production/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
-  }
+  backend "s3" {}
 }
 
 provider "aws" {
@@ -22,7 +17,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project     = "SolidaryTech"
-      Environment = "production"
+      Environment = "Production"
       CostCenter  = "NGO-Core"
       ManagedBy   = "Terraform"
     }
@@ -33,7 +28,7 @@ module "vpc" {
   source = "../../modules/vpc"
 
   project_name = var.project_name
-  environment  = "production"
+  environment  = "Production"
   aws_region   = var.aws_region
   vpc_cidr     = "10.0.0.0/16"
   cluster_name = "${var.project_name}-eks-production"
@@ -43,7 +38,7 @@ module "eks" {
   source = "../../modules/eks"
 
   project_name          = var.project_name
-  environment           = "production"
+  environment           = "Production"
   cluster_name          = "${var.project_name}-eks-production"
   kubernetes_version    = "1.36"
   vpc_id                = module.vpc.vpc_id
@@ -61,7 +56,7 @@ module "rds" {
   source = "../../modules/rds"
 
   project_name       = var.project_name
-  environment        = "production"
+  environment        = "Production"
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   eks_node_sg_id     = module.eks.node_security_group_id
@@ -76,14 +71,14 @@ module "sqs" {
   source = "../../modules/sqs"
 
   project_name = var.project_name
-  environment  = "production"
+  environment  = "Production"
 }
 
 module "elasticache" {
   source = "../../modules/elasticache"
 
   project_name       = var.project_name
-  environment        = "production"
+  environment        = "Production"
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   eks_node_sg_id     = module.eks.node_security_group_id
@@ -95,11 +90,17 @@ module "dynamodb" {
   source = "../../modules/dynamodb"
 
   project_name = var.project_name
-  environment  = "production"
+  environment  = "Production"
 }
 
 # S3 backup bucket removido: AWS Academy SCP bloqueia s3:GetBucketObjectLockConfiguration
-# ECR removido: repositorios ja criados pelo deploy.sh (evita RepositoryAlreadyExistsException)
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project_name = var.project_name
+  services     = ["ngo-service", "donation-service", "volunteer-service"]
+}
+
 
 # --- Outputs ---
 

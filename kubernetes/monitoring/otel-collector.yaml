@@ -26,8 +26,6 @@ data:
       prometheus:
         endpoint: "0.0.0.0:8889"
         namespace: "solidarytech"
-      otlphttp/loki:
-        endpoint: "http://loki.monitoring:3100/otlp"
       otlp_http/newrelic:
         endpoint: ${env:NEW_RELIC_OTLP_ENDPOINT}
         headers:
@@ -41,7 +39,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [otlphttp/loki, debug, otlp_http/newrelic]
+          exporters: [debug, otlp_http/newrelic]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, batch]

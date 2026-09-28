@@ -141,7 +141,6 @@ data:
             labels:
               severity: critical
               team: solidarytech
-              remediation: auto-restart
             annotations:
               summary: "Pod {{ $labels.pod }} is restarting repeatedly"
 

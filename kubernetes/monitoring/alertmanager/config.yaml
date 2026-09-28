@@ -3,9 +3,6 @@ kind: ConfigMap
 metadata:
   name: alertmanager-config
   namespace: monitoring
-  labels:
-    app: alertmanager
-    team: solidarytech
 data:
   alertmanager.yml: |
     global:
@@ -13,69 +10,10 @@ data:
 
     route:
       receiver: default
-      group_by: ['alertname', 'service', 'namespace']
+      group_by: [alertname, service, severity]
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
 
-      routes:
-        - receiver: selfhealing-webhook
-          match:
-            remediation: auto-restart
-          continue: true
-          group_wait: 10s
-          repeat_interval: 10m
-
-        - receiver: selfhealing-webhook
-          match:
-            remediation: auto-scalable
-          continue: true
-          group_wait: 30s
-          repeat_interval: 15m
-
-        - receiver: selfhealing-webhook
-          match:
-            remediation: auto-scale-worker
-          continue: true
-          group_wait: 30s
-          repeat_interval: 15m
-
-        - receiver: critical-alerts
-          match:
-            severity: critical
-          group_wait: 10s
-          repeat_interval: 1h
-
-        - receiver: warning-alerts
-          match:
-            severity: warning
-          group_wait: 1m
-          repeat_interval: 4h
-
     receivers:
       - name: default
-        webhook_configs:
-          - url: http://incident-receiver:8080/webhook
-            send_resolved: true
-
-      - name: selfhealing-webhook
-        webhook_configs:
-          - url: http://selfhealing-handler:9095/webhook
-            send_resolved: false
-
-      - name: critical-alerts
-        webhook_configs:
-          - url: http://incident-receiver:8080/webhook
-            send_resolved: true
-
-      - name: warning-alerts
-        webhook_configs:
-          - url: http://incident-receiver:8080/webhook
-            send_resolved: true
-
-    inhibit_rules:
-      - source_match:
-          severity: critical
-        target_match:
-          severity: warning
-        equal: ['alertname', 'service']

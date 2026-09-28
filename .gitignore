@@ -67,3 +67,12 @@ aws-credentials.json
 # Logs
 *.log
 logs/
+
+# Local academic documentation / delivery artifacts
+docs/
+*.pdf
+*.html
+
+# Local credentials / Terraform
+*.tfplan
+logs/.credentials-*

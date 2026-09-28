@@ -6,7 +6,7 @@ metadata:
 spec:
   description: "SolidaryTech Microservices Platform"
   sourceRepos:
-    - "git@github.com:rgstn/hackathon-solidarytech.git"
+    - "https://github.com/CHANGE_ME/solidarytech.git"
   destinations:
     - namespace: solidarytech
       server: https://kubernetes.default.svc

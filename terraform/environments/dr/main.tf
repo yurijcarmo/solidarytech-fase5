@@ -8,12 +8,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket  = "solidarytech-terraform-state"
-    key     = "environments/dr/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
-  }
+  backend "s3" {}
 }
 
 provider "aws" {
@@ -66,14 +61,9 @@ module "eks" {
   eks_node_role_name    = var.eks_node_role_name
 }
 
-# --- DR RDS (Cross-Region Read Replica from production) ---
-# A replica sincroniza automaticamente com o RDS primario.
-# No failover, basta promover para standalone com:
-#   aws rds promote-read-replica --db-instance-identifier solidarytech-dr-postgres
-
-# AWS Academy nao permite rds:CreateDBInstanceReadReplica cross-region.
-# Em producao real, usar is_read_replica = true com source_db_arn.
-# No Academy, criamos um RDS standalone que simula o DR.
+# --- DR RDS (Warm Standby no AWS Academy) ---
+# O laboratorio usa uma instancia RDS standalone em us-west-2.
+# Em uma conta de producao, uma Read Replica cross-region poderia reduzir o RPO.
 module "rds" {
   source = "../../modules/rds"
 
@@ -115,7 +105,7 @@ output "dr_eks_cluster_name" {
 }
 
 output "dr_rds_endpoint" {
-  description = "DR RDS endpoint (read replica)"
+  description = "DR RDS endpoint (standalone in AWS Academy)"
   value       = module.rds.endpoint
 }
 

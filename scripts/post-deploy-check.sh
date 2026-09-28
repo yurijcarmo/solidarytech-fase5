@@ -103,7 +103,7 @@ done
 # ── 3. Monitoring Pods ──────────────────────────────────
 header "3. Monitoring Stack"
 
-EXPECTED_MON="alertmanager grafana loki otel-collector prometheus promtail selfhealing-handler"
+EXPECTED_MON="alertmanager grafana loki otel-collector prometheus promtail"
 
 for app in $EXPECTED_MON; do
     check_pod_health "$app" "$NAMESPACE_MON"

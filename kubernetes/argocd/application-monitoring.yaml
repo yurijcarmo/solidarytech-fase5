@@ -9,7 +9,7 @@ metadata:
 spec:
   project: solidarytech
   source:
-    repoURL: git@github.com:rgstn/hackathon-solidarytech.git
+    repoURL: https://github.com/CHANGE_ME/solidarytech.git
     targetRevision: main
     path: kubernetes/monitoring
   destination:

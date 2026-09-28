@@ -12,7 +12,7 @@ jobs:
     name: Trivy - Scan do Repositorio
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Trivy - Scan de vulnerabilidades no codigo
         uses: aquasecurity/trivy-action@v0.36.0
@@ -35,7 +35,7 @@ jobs:
 
       - name: Upload resultado SARIF
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-filesystem-sarif
           path: trivy-fs-results.sarif
@@ -44,7 +44,7 @@ jobs:
     name: Trivy - Scan IaC (Terraform)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Trivy - Scan de configuracao Terraform
         uses: aquasecurity/trivy-action@v0.36.0
@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload resultado IaC
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-iac-sarif
           path: trivy-iac-results.sarif
@@ -75,10 +75,10 @@ jobs:
     name: Checkov - Scan IaC
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
@@ -96,7 +96,7 @@ jobs:
 
       - name: Upload resultado Checkov
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: checkov-results
           path: checkov-results.txt
@@ -105,20 +105,21 @@ jobs:
     name: Trivy - Scan Manifests Kubernetes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Trivy - Scan de manifests K8s
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: 'kubernetes/'
-          format: 'table'
+          format: 'sarif'
+          output: 'trivy-k8s-results.sarif'
           exit-code: '0'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Upload resultado K8s scan
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-k8s-results
           path: trivy-k8s-results.sarif

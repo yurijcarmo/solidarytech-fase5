@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: volunteer-service
+  name: solidarytech-platform
   namespace: argocd
   labels:
     team: solidarytech
@@ -9,9 +9,9 @@ metadata:
 spec:
   project: solidarytech
   source:
-    repoURL: git@github.com:rgstn/hackathon-solidarytech.git
+    repoURL: https://github.com/CHANGE_ME/solidarytech.git
     targetRevision: main
-    path: kubernetes/base/volunteer-service
+    path: kubernetes/base
   destination:
     server: https://kubernetes.default.svc
     namespace: solidarytech

@@ -2,16 +2,11 @@ global:
   resolve_timeout: 1m
 
 route:
-  receiver: incident-webhook
-  group_by:
-    - alertname
-    - service
+  receiver: default
+  group_by: [alertname, service, severity]
   group_wait: 5s
   group_interval: 30s
   repeat_interval: 1h
 
 receivers:
-  - name: incident-webhook
-    webhook_configs:
-      - url: http://incident-receiver:8080/webhook
-        send_resolved: true
+  - name: default

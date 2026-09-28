@@ -1,207 +1,86 @@
-name: Terraform - Infraestrutura como Codigo
+name: Terraform - Validate and Plan
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'terraform/**'
+    paths: ['terraform/**']
   pull_request:
     branches: [main]
-    paths:
-      - 'terraform/**'
+    paths: ['terraform/**']
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   AWS_REGION: us-east-1
-  TF_WORKING_DIR: terraform/environments/production
 
 jobs:
   validate:
-    name: Validar Terraform
+    name: Terraform validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.12.0
-
-      - name: Verificar formatacao
-        run: terraform fmt -check -recursive
-        working-directory: terraform/
-
-      - name: Validar modulos (production)
+      - name: Format
+        run: terraform fmt -check -recursive terraform/
+      - name: Validate production
+        working-directory: terraform/environments/production
         run: |
           terraform init -backend=false
           terraform validate
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          TF_VAR_db_username: "validate_placeholder"
-          TF_VAR_db_password: "validate_placeholder"
-          TF_VAR_eks_cluster_role_name: "validate_placeholder"
-          TF_VAR_eks_node_role_name: "validate_placeholder"
-
-      - name: Validar modulos (DR)
-        run: |
-          terraform init -backend=false
-          terraform validate
+      - name: Validate DR
         working-directory: terraform/environments/dr
-        env:
-          TF_VAR_db_username: "validate_placeholder"
-          TF_VAR_db_password: "validate_placeholder"
-          TF_VAR_eks_cluster_role_name: "validate_placeholder"
-          TF_VAR_eks_node_role_name: "validate_placeholder"
-          TF_VAR_tf_state_bucket: "validate_placeholder"
+        run: |
+          terraform init -backend=false
+          terraform validate
 
   plan:
-    name: Plano de Execucao
+    name: Terraform production plan
     runs-on: ubuntu-latest
     needs: validate
     if: github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Verificar credenciais AWS
-        id: check-creds
-        run: |
-          if [ -z "$AWS_KEY" ]; then
-            echo "has_creds=false" >> $GITHUB_OUTPUT
-            echo "::warning::Credenciais AWS nao configuradas. No AWS Academy, as credenciais expiram a cada 4h — configure em Settings > Secrets antes de executar."
-          else
-            echo "has_creds=true" >> $GITHUB_OUTPUT
-          fi
-        env:
-          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
-
-      - name: Setup Terraform
-        if: steps.check-creds.outputs.has_creds == 'true'
-        uses: hashicorp/setup-terraform@v4
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.12.0
-
-      - name: Configurar credenciais AWS
-        if: steps.check-creds.outputs.has_creds == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Inicializar Terraform
-        if: steps.check-creds.outputs.has_creds == 'true'
-        id: tf-init
+      - name: Resolve Academy account and roles
+        id: academy
         run: |
-          if ! terraform init -no-color 2>&1 | tee init-output.txt; then
-            echo "::warning::Backend S3 indisponivel — usando -backend=false (validacao local)"
-            terraform init -backend=false -no-color
-            echo "backend=false" >> $GITHUB_OUTPUT
-          else
-            echo "backend=true" >> $GITHUB_OUTPUT
-          fi
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Gerar plano
-        if: steps.check-creds.outputs.has_creds == 'true'
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          CLUSTER_ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName,'LabEksClusterRole')].RoleName | [0]" --output text 2>/dev/null || true)
+          NODE_ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName,'LabEksNodeRole')].RoleName | [0]" --output text 2>/dev/null || true)
+          [[ -z "$CLUSTER_ROLE" || "$CLUSTER_ROLE" == "None" ]] && CLUSTER_ROLE=LabRole
+          [[ -z "$NODE_ROLE" || "$NODE_ROLE" == "None" ]] && NODE_ROLE=LabRole
+          echo "state_bucket=solidarytech-terraform-state-$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "cluster_role=$CLUSTER_ROLE" >> "$GITHUB_OUTPUT"
+          echo "node_role=$NODE_ROLE" >> "$GITHUB_OUTPUT"
+      - name: Init
+        working-directory: terraform/environments/production
         run: |
-          if [ "${{ steps.tf-init.outputs.backend }}" = "true" ]; then
-            terraform plan -out=tfplan -no-color 2>&1 | tee plan-output.txt
-          else
-            echo "Plan ignorado — backend S3 indisponivel (AWS Academy). Validacao local concluida com sucesso." | tee plan-output.txt
-          fi
-        working-directory: ${{ env.TF_WORKING_DIR }}
+          terraform init \
+            -backend-config="bucket=${{ steps.academy.outputs.state_bucket }}" \
+            -backend-config="key=environments/production/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="encrypt=true"
+      - name: Plan
+        working-directory: terraform/environments/production
         env:
           TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_eks_cluster_role_name: ${{ secrets.EKS_CLUSTER_ROLE_NAME }}
-          TF_VAR_eks_node_role_name: ${{ secrets.EKS_NODE_ROLE_NAME }}
-
-      - name: Upload plano
-        if: steps.check-creds.outputs.has_creds == 'true'
-        uses: actions/upload-artifact@v6
+          TF_VAR_eks_cluster_role_name: ${{ steps.academy.outputs.cluster_role }}
+          TF_VAR_eks_node_role_name: ${{ steps.academy.outputs.node_role }}
+        run: terraform plan -no-color | tee plan-output.txt
+      - uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: |
-            ${{ env.TF_WORKING_DIR }}/tfplan
-            ${{ env.TF_WORKING_DIR }}/plan-output.txt
-
-      - name: Comentar PR com plano
-        if: github.event_name == 'pull_request' && steps.check-creds.outputs.has_creds == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const plan = fs.readFileSync('${{ env.TF_WORKING_DIR }}/plan-output.txt', 'utf8');
-            const truncated = plan.length > 60000 ? plan.substring(0, 60000) + '\n\n... (truncated)' : plan;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Terraform Plan\n\n\`\`\`\n${truncated}\n\`\`\``
-            });
-
-  apply:
-    name: Aplicar Terraform
-    runs-on: ubuntu-latest
-    needs: plan
-    if: github.event_name == 'workflow_dispatch'
-    environment: production
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Verificar credenciais AWS
-        id: check-creds
-        run: |
-          if [ -z "$AWS_KEY" ]; then
-            echo "has_creds=false" >> $GITHUB_OUTPUT
-            echo "::warning::Credenciais AWS nao configuradas. No AWS Academy, as credenciais expiram a cada 4h — configure em Settings > Secrets antes de executar."
-          else
-            echo "has_creds=true" >> $GITHUB_OUTPUT
-          fi
-        env:
-          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
-
-      - name: Setup Terraform
-        if: steps.check-creds.outputs.has_creds == 'true'
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.12.0
-
-      - name: Configurar credenciais AWS
-        if: steps.check-creds.outputs.has_creds == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Inicializar Terraform
-        if: steps.check-creds.outputs.has_creds == 'true'
-        id: tf-init-apply
-        run: |
-          if ! terraform init -no-color 2>&1 | tee init-output.txt; then
-            echo "::warning::Backend S3 indisponivel — apply ignorado (AWS Academy)"
-            echo "backend=false" >> $GITHUB_OUTPUT
-          else
-            echo "backend=true" >> $GITHUB_OUTPUT
-          fi
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Aplicar infraestrutura
-        if: steps.check-creds.outputs.has_creds == 'true' && steps.tf-init-apply.outputs.backend == 'true'
-        run: terraform apply -auto-approve -no-color 2>&1 | tee apply-output.txt
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-          TF_VAR_eks_cluster_role_name: ${{ secrets.EKS_CLUSTER_ROLE_NAME }}
-          TF_VAR_eks_node_role_name: ${{ secrets.EKS_NODE_ROLE_NAME }}
-
-      - name: Upload resultado do apply
-        if: always() && steps.tf-init-apply.outputs.backend == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: terraform-apply
-          path: ${{ env.TF_WORKING_DIR }}/apply-output.txt
+          path: terraform/environments/production/plan-output.txt

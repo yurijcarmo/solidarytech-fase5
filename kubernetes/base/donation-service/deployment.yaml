@@ -42,7 +42,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: donation-service
-          image: 617261142320.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:latest
+          image: solidarytech/donation-service:bootstrap
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
@@ -79,6 +79,28 @@ spec:
                 secretKeyRef:
                   name: solidarytech-secrets
                   key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: REDIS_URL
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_SESSION_TOKEN
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
             - name: SQS_QUEUE_URL
               valueFrom:
                 secretKeyRef:

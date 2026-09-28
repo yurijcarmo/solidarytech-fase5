@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
         - name: donation-worker
-          image: 617261142320.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:latest
+          image: solidarytech/donation-service:bootstrap
           imagePullPolicy: Always
           command: ["python", "worker.py"]
           ports:
@@ -67,3 +67,20 @@ spec:
                 secretKeyRef:
                   name: solidarytech-secrets
                   key: SQS_QUEUE_URL
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-secrets
+                  key: AWS_SESSION_TOKEN
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"

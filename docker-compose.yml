@@ -158,11 +158,5 @@ services:
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
 
-  incident-receiver:
-    image: python:3.13-slim
-    command: python /app/local-incident-receiver.py
-    volumes:
-      - ./scripts/local-incident-receiver.py:/app/local-incident-receiver.py:ro
-
 volumes:
   postgres_data:
