@@ -22,6 +22,11 @@ spec:
           image: grafana/promtail:3.4.0
           args:
             - "-config.file=/etc/promtail/promtail.yaml"
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           ports:
             - containerPort: 3101
               protocol: TCP
