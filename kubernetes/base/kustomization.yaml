@@ -7,7 +7,6 @@ resources:
   - namespace.yaml
   # secrets.yaml is NOT committed - create from secrets.yaml.example before applying
   # kubectl create secret generic solidarytech-secrets --from-env-file=.env -n solidarytech
-  - ingress.yaml
   - ngo-service/deployment.yaml
   - ngo-service/service.yaml
   - ngo-service/configmap.yaml
