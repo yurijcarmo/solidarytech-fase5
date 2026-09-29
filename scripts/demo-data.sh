@@ -41,13 +41,29 @@ done
 
 echo "[2/4] Gerando $REQUESTS doacoes com concorrencia $CONCURRENCY..."
 export DONATION_URL NGO_ID STAMP
-seq 1 "$REQUESTS" | xargs -P "$CONCURRENCY" -I{} bash -c '
-  currencies=(BRL USD EUR GBP JPY)
-  c=${currencies[$(( {} % 5 ))]}
-  curl -fsS -X POST "$DONATION_URL/api/v1/donations" \
-    -H "Content-Type: application/json" \
-    -d "{\"donor_name\":\"Demo Donor {}\",\"donor_email\":\"demo_${STAMP}_{}@example.com\",\"ngo_id\":${NGO_ID},\"amount\":\"$((10 + {} % 90)).00\",\"currency\":\"${c}\",\"payment_method\":\"pix\"}" >/dev/null
-'
+batch_start=1
+
+while [ "$batch_start" -le "$REQUESTS" ]; do
+  batch_end=$((batch_start + CONCURRENCY - 1))
+
+  if [ "$batch_end" -gt "$REQUESTS" ]; then
+    batch_end="$REQUESTS"
+  fi
+
+  for i in $(seq "$batch_start" "$batch_end"); do
+    (
+      currencies=(BRL USD EUR GBP JPY)
+      c=${currencies[$(( i % 5 ))]}
+
+      curl -fsS -X POST "$DONATION_URL/api/v1/donations" \
+        -H "Content-Type: application/json" \
+        -d "{\"donor_name\":\"Demo Donor ${i}\",\"donor_email\":\"demo_${STAMP}_${i}@example.com\",\"ngo_id\":${NGO_ID},\"amount\":\"$((10 + i % 90)).00\",\"currency\":\"${c}\",\"payment_method\":\"pix\"}" >/dev/null
+    ) &
+  done
+
+  wait
+  batch_start=$((batch_end + 1))
+done
 
 echo "[3/4] Gerando leituras para traces e metricas..."
 for i in $(seq 1 30); do
