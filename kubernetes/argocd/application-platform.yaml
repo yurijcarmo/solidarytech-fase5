@@ -15,12 +15,19 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: solidarytech
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 3
       backoff:
