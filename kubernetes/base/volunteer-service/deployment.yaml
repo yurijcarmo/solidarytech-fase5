@@ -40,7 +40,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: volunteer-service
-          image: solidarytech/volunteer-service:bootstrap
+          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/volunteer-service:sha-2dc86a13-1-1
           imagePullPolicy: Always
           ports:
             - containerPort: 8082
