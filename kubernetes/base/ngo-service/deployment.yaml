@@ -40,7 +40,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: ngo-service
-          image: solidarytech/ngo-service:bootstrap
+          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/ngo-service:sha-16c57a88-1-1
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
