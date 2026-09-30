@@ -83,7 +83,7 @@ data:
               ]
             }
           },
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "name" },
           "targets": [
             { "expr": "topk(1, count by (topology_kubernetes_io_region) (up{namespace=\"solidarytech\"} == 1))", "legendFormat": "{{ topology_kubernetes_io_region }}", "refId": "A" }
           ]
@@ -337,7 +337,7 @@ data:
               ]
             }
           },
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "name" },
           "targets": [
             { "expr": "topk(1, count by (topology_kubernetes_io_region) (up{namespace=\"solidarytech\"} == 1))", "legendFormat": "{{ topology_kubernetes_io_region }}", "refId": "A" }
           ]
@@ -624,7 +624,7 @@ data:
               ]
             }
           },
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "name" },
           "targets": [
             { "expr": "label_replace(count(up{namespace=\"solidarytech\"} == 1), \"__name__\", \"$1\", \"topology_kubernetes_io_region\", \"(.+)\") * 0 + on() group_left(topology_kubernetes_io_region) topk(1, count by (topology_kubernetes_io_region) (up{namespace=\"solidarytech\"} == 1))", "legendFormat": "{{ topology_kubernetes_io_region }}", "refId": "A" }
           ]
