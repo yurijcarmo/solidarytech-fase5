@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
         - name: donation-worker
-          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-df79a4b8-10-1
+          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-e2413215-11-1
           imagePullPolicy: Always
           command: ["python", "worker.py"]
           ports:
