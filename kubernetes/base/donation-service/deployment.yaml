@@ -42,7 +42,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: donation-service
-          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-e2413215-11-1
+          image: 945179326264.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-a03e187d-12-1
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
